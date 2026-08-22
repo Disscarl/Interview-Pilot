@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interview Pilot — AI 面试模拟器</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #161618;
+    --card: #1f1f23;
+    --accent: #e94560;
+    --gold: #e6c15a;
+    --text: #ececec;
+    --text-dim: #8f8f96;
+    --bubble-interviewer: #1d1d21;
+    --bubble-you: #27272c;
+    --border: #2b2b30;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #444; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #333 transparent;
+  }
+
+  #interview-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ── Home View ── */
+  #home-view {
+    flex: 1;
+    overflow-y: auto;
+    padding: 48px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .home-hero { text-align: center; margin-bottom: 28px; }
+  .home-hero .logo { font-size: 34px; font-weight: 800; letter-spacing: 1px; }
+  .home-hero .logo span { color: var(--accent); }
+  .home-hero .tagline { color: var(--text-dim); margin-top: 10px; font-size: 14px; }
+  .jd-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 100%;
+    max-width: 640px;
+  }
+  .jd-card h2 { font-size: 18px; margin-bottom: 6px; }
+  .jd-card .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 18px; line-height: 1.6; }
+  .jd-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 14px 0 6px;
+  }
+  .jd-label .opt { font-weight: 400; font-size: 12px; color: var(--text-dim); }
+  .jd-card textarea {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; font-size: 14px; font-family: inherit;
+    min-height: 130px; resize: vertical; outline: none; margin-top: 0;
+    line-height: 1.6;
+  }
+  .jd-card textarea:focus { border-color: var(--accent); }
+  .jd-card textarea.jd-company { min-height: 72px; }
+  .resume-row { display: flex; align-items: center; gap: 10px; }
+  .resume-name { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .resume-name.ok { color: #7dd3a0; }
+  .resume-name.error { color: #ff9aab; }
+  .jd-status { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+  .jd-status.error { background: rgba(233,69,96,0.12); color: #ff9aab; border: 1px solid rgba(233,69,96,0.4); }
+  .jd-status.info { background: rgba(245,197,24,0.1); color: var(--gold); border: 1px solid rgba(245,197,24,0.3); }
+  .btn-primary {
+    width: 100%; margin-top: 12px; background: var(--accent); color: #fff; border: none;
+    border-radius: 8px; padding: 12px; font-size: 15px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+  .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+  .plan-preview {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px 28px; width: 100%; max-width: 640px; margin-top: 20px;
+  }
+  .plan-preview h2 { font-size: 18px; margin-bottom: 12px; }
+  .plan-meta { font-size: 13px; color: var(--text-dim); line-height: 1.9; margin-bottom: 6px; }
+  .plan-meta b { color: var(--text); }
+  .plan-stage { border-left: 2px solid var(--accent); padding-left: 12px; margin: 12px 0; }
+  .plan-stage .stage-name { font-size: 14px; font-weight: 600; }
+  .plan-stage .stage-goal { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .plan-stage .stage-focus { font-size: 12px; color: var(--gold); margin-top: 2px; }
+  .section-title { color: var(--gold); font-size: 13px; margin: 16px 0 6px; }
+  .chip {
+    display: inline-block; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 2px 10px; font-size: 12px; margin: 3px 4px 0 0;
+  }
+  .generic-link {
+    margin-top: 20px; background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 13px; text-decoration: underline;
+  }
+  .generic-link:hover { color: var(--text); }
+
+  /* ── Top Bar ── */
+  .topbar {
+    background: rgba(22, 22, 24, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .topbar .logo {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .topbar .logo span { color: var(--accent); }
+  .back-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .back-btn:hover { color: var(--text); border-color: var(--text-dim); background: var(--card); }
+  .topbar .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card);
+    padding: 6px 13px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .topbar .badge .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gold);
+    box-shadow: 0 0 6px rgba(230, 193, 90, 0.7);
+    flex-shrink: 0;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .voice-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+    white-space: nowrap; transition: all 0.15s ease;
+  }
+  .voice-btn:hover { color: var(--text); border-color: var(--text-dim); }
+  .voice-btn.on { color: #7dd3a0; border-color: #7dd3a0; background: rgba(125, 211, 160, 0.08); }
+  .voice-group { position: relative; display: flex; align-items: center; gap: 6px; }
+  .voice-settings {
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; min-width: 240px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .vs-row { display: flex; align-items: center; gap: 8px; }
+  .vs-row label { font-size: 12px; color: var(--text-dim); width: 32px; flex-shrink: 0; }
+  .vs-row select {
+    flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none;
+  }
+  .vs-row select:focus { border-color: var(--accent); }
+  .vs-preview {
+    background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer;
+  }
+  .vs-preview:hover { color: var(--gold); border-color: var(--gold); }
+  .vs-preview:disabled { opacity: 0.5; cursor: not-allowed; }
+  .voice-settings-card { margin-top: 16px; }
+  .voice-settings-card .vs-row { margin: 10px 0; }
+  .voice-settings-card .vs-row label { width: 40px; }
+  .vs-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  .voice-status { min-height: 16px; font-size: 12px; color: #ff9aab; margin-top: 8px; }
+
+  /* ── Chat Area ── */
+  .chat-container {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px 20px 16px;
+    scroll-behavior: smooth;
+  }
+  .chat-container::-webkit-scrollbar { width: 8px; }
+  .chat-container::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+  .chat-container::-webkit-scrollbar-track { background: transparent; }
+
+  .chat-inner {
+    width: 100%;
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 72%;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .message.interviewer { align-self: flex-start; }
+  .message.you { align-self: flex-end; flex-direction: row-reverse; }
+
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .msg-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .message.you .msg-body { align-items: flex-end; }
+
+  .msg-meta { display: flex; align-items: center; gap: 6px; }
+  .msg-meta .phase-chip {
+    font-size: 10px;
+    color: var(--gold);
+    background: rgba(230, 193, 90, 0.08);
+    border: 1px solid rgba(230, 193, 90, 0.22);
+    border-radius: 10px;
+    padding: 1px 9px;
+    line-height: 16px;
+  }
+
+  .bubble {
+    padding: 11px 15px;
+    line-height: 1.65;
+    font-size: 14px;
+    white-space: pre-wrap;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    word-break: break-word;
+  }
+  .message.interviewer .bubble {
+    background: var(--bubble-interviewer);
+    border-radius: 4px 14px 14px 14px;
+  }
+  .message.you .bubble {
+    background: var(--bubble-you);
+    border-radius: 14px 4px 14px 14px;
+  }
+  .bubble p { margin-bottom: 6px; }
+  .bubble p:last-child { margin-bottom: 0; }
+
+  /* ── Typing indicator ── */
+  .typing .bubble {
+    display: flex;
+    gap: 6px;
+    padding: 15px 17px;
+  }
+  .typing .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+  .typing .dot:nth-child(1) { animation-delay: -0.32s; }
+  .typing .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+
+  /* ── Input Area ── */
+  .input-area {
+    background: rgba(22, 22, 24, 0.85);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    padding: 12px 20px 10px;
+    flex-shrink: 0;
+  }
+  .input-wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .input-wrap textarea {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 11px 15px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    min-height: 46px;
+    max-height: 140px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    line-height: 1.5;
+  }
+  .input-wrap textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.12);
+  }
+  .input-wrap button {
+    border: none;
+    border-radius: 12px;
+    padding: 0 22px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, color 0.15s;
+    white-space: nowrap;
+    height: 46px;
+  }
+  #send-btn { background: var(--accent); color: #fff; }
+  #send-btn:hover:not(:disabled) { opacity: 0.88; }
+  .input-wrap button.secondary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .input-wrap button.secondary:hover:not(:disabled) { color: var(--text); }
+  .input-wrap button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .mic-btn {
+    width: 46px; height: 46px; flex-shrink: 0;
+    background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 12px; font-size: 18px; cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mic-btn:hover { color: var(--text); border-color: var(--text-dim); }
+  .mic-btn.recording {
+    background: rgba(233, 69, 96, 0.16); border-color: var(--accent); color: #ff9aab;
+    animation: micPulse 1.2s infinite ease-in-out;
+  }
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.45); }
+    50% { box-shadow: 0 0 0 7px rgba(233, 69, 96, 0); }
+  }
+  .mic-cancel {
+    height: 46px; padding: 0 14px; border-radius: 12px;
+    background: transparent; border: 1px solid var(--border); color: #ff9aab;
+    font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .mic-cancel:hover { border-color: #ff9aab; }
+
+  /* ── Voice bar (WeChat-style) ── */
+  .voice-bubble {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 200px; max-width: 100%;
+  }
+  .vplay {
+    background: var(--accent); color: #fff; border: none;
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+    font-size: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .vbar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 60px; }
+  .vprogress { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; }
+  .vdur { font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
+  .vstatus { font-size: 12px; color: var(--gold); flex-shrink: 0; }
+  .voice-toggle-text {
+    align-self: flex-end; background: none; border: none; color: var(--text-dim);
+    font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; margin-top: 2px;
+  }
+  .voice-toggle-text:hover { color: var(--gold); }
+  .voice-toggle-text:disabled { color: #555; cursor: not-allowed; text-decoration: none; }
+  .voice-transcript {
+    background: var(--bubble-you); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+    word-break: break-word; max-width: 100%; margin-top: 4px;
+  }
+  .msg-play-btn {
+    align-self: flex-start; background: none; border: none; color: var(--text-dim);
+    font-size: 12px; cursor: pointer; padding: 0; margin-top: 2px;
+    text-decoration: underline;
+  }
+  .msg-play-btn:hover { color: var(--gold); }
+  .input-hint {
+    max-width: 780px;
+    margin: 6px auto 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ── History View ── */
+  #history-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .history-fab {
+    position: fixed; right: 24px; bottom: 24px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 22px; padding: 11px 18px; font-size: 13px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45); transition: all 0.15s ease; z-index: 40;
+  }
+  .history-fab:hover { color: var(--gold); border-color: var(--gold); }
+  .history-container {
+    flex: 1; overflow-y: auto;
+    width: 100%; max-width: 780px; margin: 0 auto;
+    padding: 24px 20px 40px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  #history-list { display: flex; flex-direction: column; gap: 14px; }
+  .history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; cursor: pointer; transition: border-color 0.15s; }
+  .history-card:hover { border-color: var(--accent); }
+  .history-card .hc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .history-card .hc-role { font-size: 15px; font-weight: 600; }
+  .history-card .hc-score { color: var(--gold); font-weight: 700; font-size: 15px; }
+  .history-card .hc-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .history-card .hc-summary { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+  .history-empty { text-align: center; color: var(--text-dim); padding: 60px 0; font-size: 14px; line-height: 1.8; }
+  .history-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .history-detail .hd-back { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .history-detail .hd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .history-detail .hd-left { min-width: 0; }
+  .history-detail .hd-role { font-size: 18px; font-weight: 700; }
+  .history-detail .hd-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+  .history-detail .hd-score { font-size: 32px; font-weight: 800; color: var(--gold); line-height: 1; flex-shrink: 0; }
+  .history-detail .hd-score-total { font-size: 14px; font-weight: 400; color: var(--text-dim); }
+  .history-detail .hd-divider { border-top: 1px solid var(--border); margin: 16px 0; }
+  .dim-comment { font-size: 12px; color: #888; margin-left: 90px; margin-bottom: 6px; }
+  .history-transcript { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; }
+  .history-transcript .message { max-width: 100%; }
+  .delete-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+  .delete-btn:hover { color: #ff9aab; border-color: #ff9aab; }
+
+  /* ── Report Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.3s ease;
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal h2 { font-size: 22px; margin-bottom: 6px; }
+  .score-big {
+    font-size: 48px;
+    font-weight: 800;
+    color: var(--gold);
+    text-align: center;
+    margin: 14px 0;
+  }
+  .dimension-bar {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 0;
+  }
+  .dim-label { width: 80px; font-size: 13px; text-align: right; flex-shrink: 0; }
+  .dim-track {
+    flex: 1; height: 8px; background: var(--border);
+    border-radius: 4px; overflow: hidden;
+  }
+  .dim-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--gold));
+    transition: width 0.5s ease;
+  }
+  .dim-score { width: 30px; font-size: 13px; color: var(--gold); font-weight: 600; }
+  .report-summary { text-align: center; color: #aaa; margin-bottom: 16px; font-size: 13px; line-height: 1.6; }
+  .report-section { margin-top: 20px; }
+  .report-section h3 { font-size: 15px; margin-bottom: 8px; color: var(--gold); }
+  .report-section ul { padding-left: 18px; margin: 0; }
+  .report-section li { font-size: 13px; margin-bottom: 6px; color: var(--text-dim); line-height: 1.6; }
+  .modal button {
+    margin-top: 20px; width: 100%;
+    background: var(--accent); color: #fff;
+    border: none; border-radius: 8px;
+    padding: 12px; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+
+  .hidden { display: none !important; }
+
+  /* ── Auth view ── */
+  #auth-view {
+    flex: 1; overflow-y: auto; padding: 60px 20px 40px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .auth-card { max-width: 360px; }
+  .auth-card input {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 14px; font-size: 14px; margin-bottom: 10px; outline: none;
+  }
+  .auth-card input:focus { border-color: var(--accent); }
+  .auth-row { display: flex; gap: 10px; margin-top: 4px; }
+  .auth-row button {
+    flex: 1; margin-top: 0; width: auto; height: 46px; padding: 0;
+    font-size: 15px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .auth-status { font-size: 13px; min-height: 18px; margin-top: 10px; text-align: center; }
+  .auth-status.error { color: #ff9aab; }
+  .logout-btn {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 12px; cursor: pointer; text-decoration: underline; margin-top: 10px;
+  }
+  .logout-btn:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ── Auth View ── -->
+<div id="auth-view" class="view hidden">
+  <div class="home-hero">
+    <div class="logo">🎯 <span>Interview Pilot</span></div>
+    <p class="tagline">登录后开始你的 AI 模拟面试</p>
+  </div>
+  <div class="jd-card auth-card">
+    <input id="auth-username" type="text" placeholder="用户名" autocomplete="username">
+    <input id="auth-password" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="auth-row">
+      <button class="btn-primary" id="auth-login-btn" onclick="authLogin()">登录</button>
+      <button class="btn-ghost" id="auth-register-btn" onclick="authRegister()">注册</button>
+    </div>
+    <div class="auth-status" id="auth-status"></div>
+  </div>
+</div>
+
+<!-- ── Home View ── -->
+<div id="home-view" class="view">
+  <div class="home-hero">
+    <div class="logo">🎯 <span>Interview Pilot</span></div>
+    <p class="tagline">AI 模拟面试 · 覆盖各行各业 · 根据 JD 定制面试计划 · 自适应追问 · 自动评估</p>
+    <button class="logout-btn" onclick="logout()">退出登录</button>
+  </div>
+
+  <div class="jd-card">
+    <h2>从 JD 生成定制面试</h2>
+    <p class="sub">上传简历并粘贴岗位 JD（建议完整 JD）即可生成面试；公司介绍选填。</p>
+    <label class="jd-label">简历上传 <span class="opt">（必填，支持 PDF / Word）</span></label>
+    <div class="resume-row">
+      <input id="resume-file" type="file" accept=".pdf,.docx,.doc" hidden>
+      <button type="button" class="btn-ghost" onclick="document.getElementById('resume-file').click()">选择简历文件</button>
+      <span id="resume-name" class="resume-name">未选择文件</span>
+    </div>
+    <label class="jd-label">岗位 JD / 职位名 <span class="opt">（必填，建议粘贴完整 JD）</span></label>
+    <textarea id="jd-text" placeholder="建议粘贴完整 JD（公司介绍、岗位职责、任职要求…），面试效果更好；没有完整 JD 时，至少填写职位名（如：游戏客户端开发工程师）"></textarea>
+    <label class="jd-label">公司介绍 <span class="opt">（选填）</span></label>
+    <textarea id="jd-company" class="jd-company" placeholder="选填：公司名称 / 简介 / 主营业务"></textarea>
+    <button id="jd-text-btn" class="btn-primary" onclick="analyzeJd()">解析并生成面试计划</button>
+    <div id="jd-status" class="jd-status hidden"></div>
+  </div>
+
+  <div class="jd-card voice-settings-card">
+    <h2>🎙️ 面试官设置</h2>
+    <p class="sub">面试前设置面试官语音的音色和语速；进入面试后，每条面试官消息可点「🔊 朗读」手动播报。</p>
+    <div class="vs-row">
+      <label for="voice-select">声音</label>
+      <select id="voice-select" onchange="onVoiceChange()"></select>
+    </div>
+    <div class="vs-row">
+      <label for="rate-select">语速</label>
+      <select id="rate-select" onchange="onRateChange()">
+        <option value="30">慢速</option>
+        <option value="40">稍慢</option>
+        <option value="50">正常</option>
+        <option value="60">稍快</option>
+        <option value="70">快速</option>
+      </select>
+    </div>
+    <div class="vs-actions">
+      <button class="vs-preview" id="voice-preview-btn" onclick="previewVoice()">试听</button>
+    </div>
+    <div class="voice-status" id="voice-status"></div>
+  </div>
+
+  <div id="plan-preview" class="plan-preview hidden"></div>
+  <button class="history-fab" onclick="openHistory()">📚 历史面试</button>
+</div>
+
+<!-- ── Interview View ── -->
+<div id="interview-view" class="view hidden">
+  <div class="topbar">
+    <button class="back-btn" onclick="backHome()">← 首页</button>
+    <div class="logo"><span>🎯</span> Interview Pilot</div>
+    <div class="topbar-right">
+      <span class="badge" id="phase-badge"><span class="dot"></span>准备中</span>
+    </div>
+  </div>
+
+  <div class="chat-container" id="chat">
+    <div class="chat-inner" id="chat-inner"></div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-wrap">
+      <button class="mic-btn" id="mic-btn" onclick="toggleRecording()" title="语音输入（最长 5 分钟）">🎤</button>
+      <button class="mic-cancel" id="mic-cancel" onclick="cancelRecording()" hidden>取消</button>
+      <textarea id="input" rows="1" placeholder="输入你的回答..." disabled></textarea>
+      <button id="send-btn" onclick="sendAnswer()" disabled>发送</button>
+      <button class="secondary" id="end-btn" onclick="endInterview()" disabled>结束</button>
+    </div>
+    <div class="input-hint" id="input-hint">Enter 发送 · Shift+Enter 换行 · 🎤 语音输入</div>
+  </div>
+</div>
+
+<!-- ── History View ── -->
+<div id="history-view" class="view hidden">
+  <div class="topbar">
+    <button class="back-btn" onclick="showView('home')">← 首页</button>
+    <div class="logo"><span>📚</span> 历史面试</div>
+  </div>
+  <div class="history-container">
+    <div id="history-list"></div>
+    <div id="history-detail" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ── Report Modal ── -->
+<div class="modal-overlay hidden" id="report-overlay">
+  <div class="modal" id="report-content"></div>
+</div>
+
+<script>
+// ── State ──
+let sessionId = null;
+let ws = null;
+let connected = false;
+let closedByUser = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let shouldResume = false;
+let currentJd = null;   // {profile, plan, candidate} returned by /api/jd/analyze
+let resumeText = null;  // extracted resume text (optional)
+let authToken = localStorage.getItem('auth_token') || '';
+
+// ── Helpers ──
+const $ = (sel) => document.querySelector(sel);
+const chat = $('#chat');
+const chatInner = $('#chat-inner');
+const input = $('#input');
+const sendBtn = $('#send-btn');
+const endBtn = $('#end-btn');
+const phaseBadge = $('#phase-badge');
+const micBtn = $('#mic-btn');
+const micCancel = $('#mic-cancel');
+
+// ── Voice (TTS) state ──
+const TTS_VOICES = [
+  { id: 'x5_lingxiaotang_flow', label: '聆小糖 · 女声（默认）' },
+  { id: 'x5_lingyuzhao_flow', label: '聆玉昭 · 女声' },
+  { id: 'x6_lingxiaoxuan_pro', label: '聆小璇 · 女声' },
+  { id: 'x6_lingxiaoyue_pro', label: '聆小玥 · 女声' },
+  { id: 'x6_lingyuyan_pro', label: '聆玉言 · 女声' },
+  { id: 'x7_yaxi_pro', label: '雅夕 · 女声' },
+  { id: 'x6_lingfeiyi_pro', label: '聆飞逸 · 男声' },
+  { id: 'x6_ruyadashu_pro', label: '儒雅大叔 · 男声' },
+  { id: 'x7_langxiao_pro', label: '朗霄 · 男声' },
+];
+let ttsVoice = localStorage.getItem('tts_voice') || 'x5_lingxiaotang_flow';
+let ttsSpeed = localStorage.getItem('tts_speed') || '50';
+let currentAudio = null;   // TTS <audio> (preview / manual play)
+
+// ── Recording (STT) state ──
+let recording = false;
+let audioCtx = null;
+let mediaStream = null;
+let sourceNode = null;
+let processorNode = null;
+let pcmChunks = [];
+let recStartTs = 0;
+let recTimer = null;
+let pendingVoiceMsg = null;   // voice bar awaiting server transcript
+const MAX_RECORD_MS = 300000; // 5 minutes
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const PHASE_LABELS = {
+  intro: '自我介绍', warm_up: '暖场', tech_1: '专业基础',
+  tech_2: '项目深挖', tech_3: '开放题', closing: '收尾',
+  evaluate: '评估中',
+};
+
+function phaseLabel(phase) {
+  return PHASE_LABELS[phase] || '';
+}
+
+function setPhaseBadge(phase) {
+  const label = phase === 'done' ? '完成' : (PHASE_LABELS[phase] || '准备中');
+  phaseBadge.innerHTML = `<span class="dot"></span>${esc(label)}`;
+}
+
+function showView(name) {
+  const views = {
+    auth: document.getElementById('auth-view'),
+    home: document.getElementById('home-view'),
+    interview: document.getElementById('interview-view'),
+    history: document.getElementById('history-view'),
+  };
+  for (const [key, el] of Object.entries(views)) {
+    el.classList.toggle('hidden', key !== name);
+  }
+}
+
+// ── Auth ──
+async function apiFetch(url, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + authToken });
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    logout();
+    throw new Error('登录已过期，请重新登录');
+  }
+  return resp;
+}
+
+function setAuthStatus(msg, isError) {
+  const el = $('#auth-status');
+  el.textContent = msg || '';
+  el.className = 'auth-status' + (isError ? ' error' : '');
+}
+
+async function authLogin() {
+  const username = $('#auth-username').value.trim();
+  const password = $('#auth-password').value;
+  if (!username || !password) { setAuthStatus('请输入用户名和密码', true); return; }
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { setAuthStatus(data.detail || '登录失败', true); return; }
+    authToken = data.token;
+    localStorage.setItem('auth_token', authToken);
+    enterApp();
+  } catch (e) {
+    setAuthStatus('登录失败：' + e.message, true);
+  }
+}
+
+async function authRegister() {
+  const username = $('#auth-username').value.trim();
+  const password = $('#auth-password').value;
+  if (!username || !password) { setAuthStatus('请输入用户名和密码', true); return; }
+  try {
+    const resp = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { setAuthStatus(data.detail || '注册失败', true); return; }
+    authToken = data.token;
+    localStorage.setItem('auth_token', authToken);
+    enterApp();
+  } catch (e) {
+    setAuthStatus('注册失败：' + e.message, true);
+  }
+}
+
+function enterApp() {
+  $('#auth-username').value = '';
+  $('#auth-password').value = '';
+  setAuthStatus('');
+  showView('home');
+}
+
+function logout() {
+  authToken = '';
+  localStorage.removeItem('auth_token');
+  closedByUser = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (ws) { ws.onclose = null; try { ws.close(); } catch (e) {} }
+  ws = null;
+  connected = false;
+  showView('auth');
+}
+
+function addMessage(role, content, phase) {
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'interviewer' ? '🤖' : '👤';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  if (phase && phaseLabel(phase)) {
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.innerHTML = `<span class="phase-chip">${esc(phaseLabel(phase))}</span>`;
+    body.appendChild(meta);
+  }
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = content;
+  body.appendChild(bubble);
+  div.appendChild(avatar);
+  div.appendChild(body);
+  chatInner.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// ── Streaming ──
+// A single element per turn transitions from "typing" → "streaming message" in place,
+// so there is never more than one interviewer bubble per turn.
+let streamEl = null;
+
+function addTyping() {
+  if (streamEl) return;  // already active (typing or streaming)
+  const div = document.createElement('div');
+  div.className = 'message interviewer typing';
+  div.innerHTML = '<div class="avatar">🤖</div><div class="msg-body"><div class="bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>';
+  chatInner.appendChild(div);
+  streamEl = div.querySelector('.bubble');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeTyping() {
+  // Drop a pending typing indicator (only if it never started streaming).
+  if (streamEl) {
+    const msg = streamEl.closest('.message');
+    if (msg && msg.classList.contains('typing')) msg.remove();
+  }
+  streamEl = null;
+}
+
+function appendStreamToken(token) {
+  if (!streamEl) {
+    // No typing indicator was shown (e.g. server skipped "thinking") — create a fresh bubble.
+    const div = document.createElement('div');
+    div.className = 'message interviewer';
+    div.innerHTML = '<div class="avatar">🤖</div><div class="msg-body"><div class="bubble"></div></div>';
+    chatInner.appendChild(div);
+    streamEl = div.querySelector('.bubble');
+  } else {
+    // First token: convert the typing bubble into a message bubble in place.
+    const msg = streamEl.closest('.message');
+    if (msg && msg.classList.contains('typing')) {
+      msg.classList.remove('typing');
+      streamEl.innerHTML = '';
+    }
+  }
+  streamEl.appendChild(document.createTextNode(token));
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function endStream(phase) {
+  if (streamEl) {
+    const msg = streamEl.closest('.message');
+    if (msg && msg.classList.contains('typing')) {
+      msg.remove();  // no tokens arrived → drop the dots
+    } else if (msg) {
+      const text = streamEl.textContent || '';
+      const playBtn = document.createElement('button');
+      playBtn.className = 'msg-play-btn';
+      playBtn.textContent = '🔊 朗读';
+      playBtn.onclick = () => playMessageTts(text);
+      const body = msg.querySelector('.msg-body');
+      if (body) body.appendChild(playBtn);
+    }
+  }
+  streamEl = null;
+  if (phase) setPhaseBadge(phase);
+  setUIState('active');
+}
+
+function setUIState(state) {
+  // states: 'pre', 'active', 'done'
+  if (state === 'pre') {
+    sendBtn.disabled = true;
+    endBtn.disabled = true;
+    input.disabled = true;
+    micBtn.disabled = true;
+    setPhaseBadge(null);
+  } else if (state === 'active') {
+    sendBtn.disabled = false;
+    endBtn.disabled = false;
+    input.disabled = false;
+    if (!recording && !pendingVoiceMsg) micBtn.disabled = false;
+    input.focus();
+  } else {
+    sendBtn.disabled = true;
+    endBtn.disabled = true;
+    input.disabled = true;
+    micBtn.disabled = true;
+  }
+}
+
+// ── Voice (TTS) ──
+function onVoiceChange() {
+  ttsVoice = $('#voice-select').value;
+  localStorage.setItem('tts_voice', ttsVoice);
+}
+
+function onRateChange() {
+  ttsSpeed = $('#rate-select').value;
+  localStorage.setItem('tts_speed', ttsSpeed);
+}
+
+function setVoiceStatus(msg, isError) {
+  const el = $('#voice-status');
+  if (el) {
+    el.textContent = msg || '';
+    el.style.color = isError ? '#ff9aab' : '';
+  }
+}
+
+function initVoiceSettings() {
+  const sel = $('#voice-select');
+  sel.innerHTML = TTS_VOICES.map(v => `<option value="${v.id}">${v.label}</option>`).join('');
+  sel.value = ttsVoice;
+  $('#rate-select').value = ttsSpeed;
+}
+
+function playTtsBase64(b64) {
+  stopTtsAudio();
+  currentAudio = new Audio('data:audio/mpeg;base64,' + b64);
+  currentAudio.play().catch(e => console.warn('TTS play blocked:', e));
+}
+
+async function playMessageTts(text) {
+  if (!text || !text.trim()) return;
+  try {
+    const resp = await apiFetch('/api/tts/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, voice: ttsVoice, speed: Number(ttsSpeed) }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { showInputHint(data.detail || '语音合成失败', true); return; }
+    playTtsBase64(data.audio_base64);
+  } catch (e) {
+    showInputHint('语音合成失败：' + e.message, true);
+  }
+}
+
+async function previewVoice() {
+  const btn = $('#voice-preview-btn');
+  btn.disabled = true;
+  btn.textContent = '合成中…';
+  setVoiceStatus('');
+  try {
+    const resp = await apiFetch('/api/tts/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: '你好，我是本次模拟面试的面试官，这是语音播报效果。',
+        voice: ttsVoice,
+        speed: Number(ttsSpeed),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { setVoiceStatus(data.detail || '试听失败', true); return; }
+    playTtsBase64(data.audio_base64);
+  } catch (e) {
+    setVoiceStatus('试听失败：' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '试听';
+  }
+}
+
+function stopTtsAudio() {
+  if (currentAudio) {
+    try { currentAudio.pause(); } catch (e) {}
+    currentAudio = null;
+  }
+}
+
+// ── WebSocket ──
+function connectWs() {
+  if (!sessionId) sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/ws/${sessionId}?token=${encodeURIComponent(authToken)}`;
+
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    connected = true;
+    reconnectAttempts = 0;
+    if (shouldResume) {
+      shouldResume = false;
+      sendCreate(true);
+    }
+  };
+
+  ws.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    switch (data.type) {
+      case 'created':
+        setPhaseBadge('intro');
+        break;
+
+      case 'resume':
+        renderMessages(data.messages);
+        setPhaseBadge(data.phase);
+        setUIState('active');
+        break;
+
+      case 'message':
+        removeTyping();
+        addMessage(data.role, data.content, data.phase);
+        setPhaseBadge(data.phase);
+        setUIState('active');
+        break;
+
+      case 'thinking':
+        addTyping();
+        sendBtn.disabled = true;
+        break;
+
+      case 'stream_token':
+        appendStreamToken(data.content);
+        break;
+
+      case 'stream_end':
+        endStream(data.phase);
+        break;
+
+      case 'candidate_voice':
+        handleCandidateVoice(data);
+        break;
+
+      case 'interview_end':
+        stopTtsAudio();
+        removeTyping();
+        addMessage('interviewer', data.content);
+        setPhaseBadge('done');
+        setUIState('done');
+        break;
+
+      case 'report':
+        stopTtsAudio();
+        removeTyping();
+        showReport(data.report);
+        setUIState('done');
+        break;
+
+      case 'error':
+        removeTyping();
+        addMessage('interviewer', '⚠️ 出错了: ' + data.content);
+        setUIState('active');
+        break;
+    }
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    if (!closedByUser) scheduleReconnect();
+  };
+
+  ws.onerror = (err) => {
+    console.error('WebSocket error:', err);
+  };
+}
+
+function sendCreate(resume) {
+  const payload = { action: 'create', resume: !!resume };
+  if (currentJd) payload.jd = currentJd;
+  const trySend = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+    } else {
+      setTimeout(trySend, 150);
+    }
+  };
+  trySend();
+}
+
+function scheduleReconnect() {
+  reconnectAttempts++;
+  if (reconnectAttempts > 5) {
+    showInputHint('连接断开，重连失败，请返回首页重新开始', true);
+    setUIState('done');
+    return;
+  }
+  showInputHint('连接断开，正在重连…（第 ' + reconnectAttempts + ' 次）', true);
+  sendBtn.disabled = true;
+  endBtn.disabled = true;
+  input.disabled = true;
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000);
+  reconnectTimer = setTimeout(() => {
+    shouldResume = true;
+    connectWs();
+  }, delay);
+}
+
+function renderMessages(msgs) {
+  chatInner.innerHTML = '';
+  streamEl = null;
+  pendingVoiceMsg = null;
+  for (const m of (msgs || [])) {
+    if (m.role === 'interviewer') {
+      addMessage('interviewer', m.content);
+    } else if (m.role === 'candidate') {
+      if (m.audio_url) {
+        const v = addVoiceMessage({ audioUrl: m.audio_url, duration: m.audio_duration || 0, pending: false });
+        v.trans.textContent = m.content || '';
+        v.toggleBtn.disabled = false;
+      } else {
+        addMessage('you', m.content);
+      }
+    }
+  }
+}
+
+// ── JD analysis ──
+function showJdStatus(msg, kind) {
+  const el = document.getElementById('jd-status');
+  el.textContent = msg;
+  el.className = 'jd-status ' + (kind === 'error' ? 'error' : 'info');
+  el.classList.remove('hidden');
+}
+
+function hideJdStatus() {
+  document.getElementById('jd-status').classList.add('hidden');
+}
+
+async function analyzeJd() {
+  const textInput = document.getElementById('jd-text');
+  const companyInput = document.getElementById('jd-company');
+  const textBtn = document.getElementById('jd-text-btn');
+
+  const body = {};
+  const company = companyInput.value.trim();
+  if (company) body.company = company;
+  if (resumeText) body.resume_text = resumeText;
+
+  if (!resumeText) { showJdStatus('请先上传简历（必填）', 'error'); return; }
+
+  const text = textInput.value.trim();
+  if (!text) { showJdStatus('请先填写岗位 JD 或职位名', 'error'); return; }
+  body.text = text;
+
+  showJdStatus('正在解析并生成面试计划…（约需几秒）', 'info');
+  textBtn.disabled = true;
+  try {
+    const resp = await apiFetch('/api/jd/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showJdStatus(data.detail || '解析失败，请重试', 'error');
+      return;
+    }
+    currentJd = data;
+    hideJdStatus();
+    renderPlan(data);
+  } catch (e) {
+    showJdStatus('网络错误：' + e.message, 'error');
+  } finally {
+    textBtn.disabled = false;
+  }
+}
+
+function renderPlan(jd) {
+  const p = jd.profile || {};
+  const plan = jd.plan || {};
+  const el = document.getElementById('plan-preview');
+
+  const meta = [];
+  if (p.company_name) {
+    let comp = `<b>公司</b>：${esc(p.company_name)}`;
+    if (p.company_type) comp += `（${esc(p.company_type)}）`;
+    meta.push(comp);
+  }
+  if (p.industry) meta.push(`<b>行业</b>：${esc(p.industry)}`);
+  if (p.role_title) meta.push(`<b>岗位</b>：${esc(p.role_title)}`);
+
+  const focus = (plan.focus_areas || []).map(f => `<span class="chip">${esc(f)}</span>`).join('');
+  const techs = (p.tech_stack || []).map(t => `<span class="chip">${esc(t)}</span>`).join('');
+  const cr = p.company_research || {};
+  let researchHtml = '';
+  if (cr.business || (cr.products && cr.products.length) || (cr.history_projects && cr.history_projects.length)) {
+    researchHtml = '<div class="section-title">🏢 公司调研</div>';
+    if (cr.business) researchHtml += `<div class="plan-meta"><b>核心业务</b>：${esc(cr.business)}</div>`;
+    if (cr.products && cr.products.length) researchHtml += `<div class="plan-meta"><b>代表产品</b>：${esc(cr.products.join('、'))}</div>`;
+    if (cr.history_projects && cr.history_projects.length) researchHtml += `<div class="plan-meta"><b>历史项目</b>：${esc(cr.history_projects.join('、'))}</div>`;
+    if (cr.market_position) researchHtml += `<div class="plan-meta"><b>行业地位</b>：${esc(cr.market_position)}</div>`;
+  }
+  const cand = jd.candidate || {};
+  let candidateHtml = '';
+  if (cand.skills || cand.projects || cand.years_of_experience) {
+    candidateHtml = '<div class="section-title">👤 候选人画像（来自简历）</div>';
+    if (cand.years_of_experience) candidateHtml += `<div class="plan-meta"><b>工作年限</b>：${esc(cand.years_of_experience)}</div>`;
+    if (cand.skills && cand.skills.length) candidateHtml += `<div class="plan-meta"><b>技能</b>：${esc(cand.skills.join('、'))}</div>`;
+    if (cand.projects && cand.projects.length) candidateHtml += `<div class="plan-meta"><b>项目</b>：${esc(cand.projects.join('；'))}</div>`;
+    if (cand.work_history && cand.work_history.length) candidateHtml += `<div class="plan-meta"><b>工作经历</b>：${esc(cand.work_history.join('；'))}</div>`;
+  }
+  const stages = (plan.stages || []).map(s => `
+    <div class="plan-stage">
+      <div class="stage-name">${esc(s.name || '')}</div>
+      <div class="stage-goal">${esc(s.goal || '')}</div>
+      ${(s.focus && s.focus.length) ? `<div class="stage-focus">关注：${esc(s.focus.join('、'))}</div>` : ''}
+    </div>`).join('');
+
+  el.innerHTML = `
+    <h2>📋 面试计划已生成</h2>
+    <div class="plan-meta">${meta.join('<br>')}</div>
+    ${plan.summary ? `<div class="plan-meta">${esc(plan.summary)}</div>` : ''}
+    ${focus ? `<div class="section-title">🎯 重点考查领域</div><div>${focus}</div>` : ''}
+    ${techs ? `<div class="section-title">🛠 技术栈</div><div>${techs}</div>` : ''}
+    ${researchHtml}
+    ${candidateHtml}
+    <div class="section-title">📝 面试阶段</div>${stages}
+    <button class="btn-primary" onclick="startInterview()">开始面试</button>
+  `;
+  el.classList.remove('hidden');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Actions ──
+function startInterview() {
+  showView('interview');
+  closedByUser = false;
+  sessionId = null;
+  shouldResume = false;
+  reconnectAttempts = 0;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (!connected || !ws || ws.readyState !== WebSocket.OPEN) connectWs();
+
+  setUIState('active');
+  chatInner.innerHTML = '';
+  sendCreate(false);
+}
+
+function backHome() {
+  stopTtsAudio();
+  if (recording) cancelRecording();
+  closedByUser = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (ws) {
+    ws.onclose = null;
+    try { ws.close(); } catch (e) {}
+  }
+  ws = null;
+  connected = false;
+  currentJd = null;
+  streamEl = null;
+  pendingVoiceMsg = null;
+  chatInner.innerHTML = '';
+  showView('home');
+}
+
+function sendAnswer() {
+  const text = input.value.trim();
+  if (!text || !connected) return;
+
+  addMessage('you', text);
+  input.value = '';
+  sendBtn.disabled = true;
+
+  ws.send(JSON.stringify({ action: 'answer', content: text }));
+}
+
+function endInterview() {
+  if (!connected) return;
+  stopTtsAudio();
+  closedByUser = true;
+  ws.send(JSON.stringify({ action: 'end' }));
+  setUIState('done');
+}
+
+// ── Voice input (recording → upload) ──
+function showInputHint(msg, isError) {
+  const hint = $('#input-hint');
+  if (!hint) return;
+  hint.textContent = msg;
+  hint.style.color = isError ? '#ff9aab' : '';
+}
+
+function clearInputHint() {
+  const hint = $('#input-hint');
+  if (!hint) return;
+  hint.textContent = 'Enter 发送 · Shift+Enter 换行 · 🎤 语音输入';
+  hint.style.color = '';
+}
+
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return (m > 0 ? m + ':' : '0:') + String(s).padStart(2, '0');
+}
+
+function toggleRecording() {
+  if (recording) stopRecording(); else startRecording();
+}
+
+async function startRecording() {
+  if (recording) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showInputHint('当前浏览器不支持录音（需要 HTTPS 或 localhost）', true);
+    return;
+  }
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    showInputHint('无法访问麦克风，请检查浏览器权限', true);
+    return;
+  }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  try {
+    audioCtx = new Ctx({ sampleRate: 16000 });
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  } catch (e) {
+    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+    showInputHint('无法初始化录音，请重试', true);
+    return;
+  }
+  pcmChunks = [];
+  processorNode.onaudioprocess = (e) => {
+    pcmChunks.push(downsample(e.inputBuffer.getChannelData(0), audioCtx.sampleRate, 16000));
+  };
+  sourceNode.connect(processorNode);
+  processorNode.connect(audioCtx.destination);
+
+  recording = true;
+  recStartTs = Date.now();
+  micBtn.classList.add('recording');
+  micBtn.textContent = '⏹';
+  micCancel.hidden = false;
+  recTimer = setInterval(() => {
+    const elapsed = Date.now() - recStartTs;
+    showInputHint('正在录音 ' + fmtDur(elapsed / 1000) + '（最长 5 分钟，点 ⏹ 停止）');
+    if (elapsed >= MAX_RECORD_MS) stopRecording();
+  }, 200);
+}
+
+function downsample(input, fromRate, toRate) {
+  const ratio = fromRate / toRate;
+  const len = Math.floor(input.length / ratio);
+  const out = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
+    const v = Math.max(-1, Math.min(1, input[Math.round(i * ratio)]));
+    out[i] = Math.round(v * 32767);
+  }
+  return out;
+}
+
+function writeStr(view, offset, str) {
+  for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+}
+
+function pcmToWav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  writeStr(view, 0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeStr(view, 8, 'WAVE');
+  writeStr(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(view, 36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    view.setInt16(offset, samples[i], true);
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+function stopRecording() {
+  if (!recording) return;
+  clearInterval(recTimer);
+  try { processorNode.disconnect(); sourceNode.disconnect(); } catch (e) {}
+  try { audioCtx.close(); } catch (e) {}
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  recording = false;
+  micBtn.classList.remove('recording');
+  micBtn.textContent = '🎤';
+  micCancel.hidden = true;
+  clearInputHint();
+
+  const totalLen = pcmChunks.reduce((s, c) => s + c.length, 0);
+  const merged = new Int16Array(totalLen);
+  let off = 0;
+  for (const c of pcmChunks) { merged.set(c, off); off += c.length; }
+  const durationSec = totalLen / 16000;
+  if (!totalLen) { showInputHint('没有录到声音，请重试', true); return; }
+
+  const wavBlob = pcmToWav(merged, 16000);
+  const localUrl = URL.createObjectURL(wavBlob);
+  pendingVoiceMsg = addVoiceMessage({ audioUrl: localUrl, duration: durationSec, pending: true });
+  micBtn.disabled = true;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const b64 = reader.result.split(',')[1];
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        action: 'answer_audio',
+        audio_base64: b64,
+        duration_ms: Math.round(durationSec * 1000),
+      }));
+    } else {
+      showInputHint('连接已断开，语音未发送', true);
+      micBtn.disabled = false;
+    }
+  };
+  reader.onerror = () => { showInputHint('读取音频失败', true); micBtn.disabled = false; };
+  reader.readAsDataURL(wavBlob);
+}
+
+function cancelRecording() {
+  if (!recording) return;
+  clearInterval(recTimer);
+  try { processorNode.disconnect(); sourceNode.disconnect(); } catch (e) {}
+  try { audioCtx.close(); } catch (e) {}
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  recording = false;
+  pcmChunks = [];
+  micBtn.classList.remove('recording');
+  micBtn.textContent = '🎤';
+  micCancel.hidden = true;
+  clearInputHint();
+}
+
+// ── Voice bar (WeChat-style) ──
+function addVoiceMessage(opts) {
+  const div = document.createElement('div');
+  div.className = 'message you';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = '👤';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble voice-bubble';
+  bubble.innerHTML = `
+    <button class="vplay" onclick="toggleVoicePlay(this)" data-src="${esc(opts.audioUrl || '')}">▶</button>
+    <div class="vbar"><div class="vprogress"></div></div>
+    <span class="vdur">${fmtDur(opts.duration)}</span>
+    <span class="vstatus">${opts.pending ? '识别中…' : ''}</span>
+  `;
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'voice-toggle-text';
+  toggleBtn.textContent = '转文字';
+  toggleBtn.disabled = !!opts.pending;
+  toggleBtn.onclick = () => toggleTranscript(toggleBtn);
+
+  const trans = document.createElement('div');
+  trans.className = 'voice-transcript hidden';
+
+  body.appendChild(bubble);
+  body.appendChild(toggleBtn);
+  body.appendChild(trans);
+  div.appendChild(avatar);
+  div.appendChild(body);
+  chatInner.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+
+  return { el: div, bubble, toggleBtn, trans };
+}
+
+function toggleTranscript(btn) {
+  const next = btn.nextElementSibling;
+  if (next) next.classList.toggle('hidden');
+}
+
+function handleCandidateVoice(data) {
+  if (!pendingVoiceMsg) return;
+  const { bubble, toggleBtn, trans } = pendingVoiceMsg;
+  const st = bubble.querySelector('.vstatus');
+  if (data.error) {
+    if (st) st.textContent = data.error;
+    pendingVoiceMsg = null;
+    micBtn.disabled = false;
+    return;
+  }
+  trans.textContent = data.text || '';
+  toggleBtn.disabled = false;
+  if (st) st.textContent = '';
+  if (data.audio_url) {
+    const playBtn = bubble.querySelector('.vplay');
+    if (playBtn) playBtn.dataset.src = data.audio_url;
+  }
+  pendingVoiceMsg = null;
+  micBtn.disabled = false;
+}
+
+let activeVoiceAudio = null;
+let activeVoiceBtn = null;
+
+function toggleVoicePlay(btn) {
+  const src = btn.dataset.src;
+  if (!src) return;
+  const url = src + (src.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(authToken);
+  if (activeVoiceBtn === btn && activeVoiceAudio) {
+    if (activeVoiceAudio.paused) { activeVoiceAudio.play().catch(() => {}); }
+    else { activeVoiceAudio.pause(); }
+    return;
+  }
+  if (activeVoiceAudio) {
+    try { activeVoiceAudio.pause(); } catch (e) {}
+  }
+  const audio = new Audio(url);
+  const bar = btn.closest('.voice-bubble').querySelector('.vprogress');
+  audio.addEventListener('timeupdate', () => {
+    if (bar && audio.duration) bar.style.width = (audio.currentTime / audio.duration * 100) + '%';
+  });
+  audio.addEventListener('play', () => { btn.textContent = '⏸'; });
+  audio.addEventListener('pause', () => { btn.textContent = '▶'; });
+  audio.addEventListener('ended', () => { btn.textContent = '▶'; if (bar) bar.style.width = '0%'; });
+  activeVoiceAudio = audio;
+  activeVoiceBtn = btn;
+  audio.play().catch(() => { btn.textContent = '▶'; });
+}
+
+// ── Report ──
+function buildReportBody(report) {
+  let dims = '';
+  for (const [name, dim] of Object.entries(report.dimension_scores || {})) {
+    const pct = (dim.score / 5) * 100;
+    dims += `
+      <div class="dimension-bar">
+        <span class="dim-label">${esc(name)}</span>
+        <div class="dim-track"><div class="dim-fill" style="width:${pct}%"></div></div>
+        <span class="dim-score">${dim.score}/5</span>
+      </div>
+      <div class="dim-comment">${esc(dim.comment || '')}</div>`;
+  }
+  const highlights = (report.highlights || []).map(h => `<li>✅ ${esc(h)}</li>`).join('');
+  const weakPoints = (report.weak_points || []).map(w =>
+    `<li>⚠️ <b>${esc(w.area)}</b>: ${esc(w.description)}<br><i>建议: ${esc(w.suggestion)}</i></li>`
+  ).join('');
+  const recs = (report.recommended_topics || []).map(t => `<li>📚 ${esc(t)}</li>`).join('');
+
+  return `
+    <p class="report-summary">${esc(report.summary || '')}</p>
+    ${dims}
+    <div class="report-section"><h3>🌟 亮点</h3><ul>${highlights || '<li>暂无</li>'}</ul></div>
+    <div class="report-section"><h3>🎯 薄弱点</h3><ul>${weakPoints || '<li>暂无</li>'}</ul></div>
+    <div class="report-section"><h3>📚 推荐学习方向</h3><ul>${recs || '<li>暂无</li>'}</ul></div>
+  `;
+}
+
+function showReport(report) {
+  $('#report-content').innerHTML = `
+    <h2>📊 面试评估报告</h2>
+    <div class="score-big">${report.overall_score?.toFixed(1) || '?'} <span style="font-size:16px;color:#888;">/ 5.0</span></div>
+    ${buildReportBody(report)}
+    <button onclick="closeReport()">关闭</button>
+  `;
+  $('#report-overlay').classList.remove('hidden');
+}
+
+function closeReport() {
+  $('#report-overlay').classList.add('hidden');
+}
+
+// ── History ──
+function openHistory() {
+  showView('history');
+  loadHistory();
+}
+
+async function loadHistory() {
+  const list = document.getElementById('history-list');
+  document.getElementById('history-detail').classList.add('hidden');
+  list.classList.remove('hidden');
+  list.innerHTML = '<div class="history-empty">加载中…</div>';
+  try {
+    const resp = await apiFetch('/api/history');
+    const data = await resp.json();
+    const items = data.interviews || [];
+    if (!items.length) {
+      list.innerHTML = '<div class="history-empty">还没有历史面试记录<br>完成一次面试后会自动保存到这里</div>';
+      return;
+    }
+    list.innerHTML = items.map(it => `
+      <div class="history-card" onclick="viewHistoryDetail('${esc(it.id)}')">
+        <div class="hc-top">
+          <span class="hc-role">${esc(it.role_title || '面试')}</span>
+          <span class="hc-score">${it.overall_score != null ? it.overall_score.toFixed(1) : '—'}</span>
+        </div>
+        <div class="hc-meta">${esc(it.company_name || '未知公司')} · ${esc(it.created_at || '')}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="history-empty">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+async function viewHistoryDetail(id) {
+  const list = document.getElementById('history-list');
+  const detail = document.getElementById('history-detail');
+  detail.innerHTML = '<div class="history-empty">加载中…</div>';
+  detail.classList.remove('hidden');
+  list.classList.add('hidden');
+  try {
+    const resp = await apiFetch('/api/history/' + encodeURIComponent(id));
+    if (!resp.ok) { detail.innerHTML = '<div class="history-empty">记录不存在</div>'; return; }
+    const rec = await resp.json();
+    detail.innerHTML = renderHistoryDetail(rec);
+  } catch (e) {
+    detail.innerHTML = '<div class="history-empty">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderHistoryDetail(rec) {
+  const msgs = (rec.messages || []).map(m => {
+    const role = m.role === 'interviewer' ? 'interviewer' : 'you';
+    const avatar = m.role === 'interviewer' ? '🤖' : '👤';
+    if (m.audio_url) {
+      return `
+        <div class="message ${role}">
+          <div class="avatar">${avatar}</div>
+          <div class="msg-body">
+            <div class="bubble voice-bubble">
+              <button class="vplay" onclick="toggleVoicePlay(this)" data-src="${esc(m.audio_url)}">▶</button>
+              <div class="vbar"><div class="vprogress"></div></div>
+              <span class="vdur">${fmtDur(m.audio_duration || 0)}</span>
+            </div>
+            <button class="voice-toggle-text" onclick="toggleTranscript(this)">转文字</button>
+            <div class="voice-transcript hidden">${esc(m.content || '')}</div>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="message ${role}">
+        <div class="avatar">${avatar}</div>
+        <div class="msg-body"><div class="bubble">${esc(m.content || '')}</div></div>
+      </div>`;
+  }).join('');
+  const score = rec.overall_score != null ? rec.overall_score.toFixed(1) : '—';
+  return `
+    <div class="hd-back">
+      <button class="back-btn" onclick="backToList()">← 返回</button>
+      <button class="delete-btn" onclick="deleteHistory('${esc(rec.id)}')">删除</button>
+    </div>
+    <div class="hd-head">
+      <div class="hd-left">
+        <div class="hd-role">${esc(rec.role_title || '面试')}</div>
+        <div class="hd-meta">
+          <span>${esc(rec.company_name || '未知公司')}</span>
+          <span>${esc(rec.created_at || '')}</span>
+        </div>
+      </div>
+      <div class="hd-score">${score}<span class="hd-score-total"> / 5</span></div>
+    </div>
+    <div class="hd-divider"></div>
+    <div class="section-title">📊 评估报告</div>
+    ${buildReportBody(rec.report || {})}
+    <div class="section-title">💬 对话记录</div>
+    <div class="history-transcript">${msgs || '<div class="history-empty">无对话</div>'}</div>
+  `;
+}
+
+function backToList() {
+  document.getElementById('history-list').classList.remove('hidden');
+  document.getElementById('history-detail').classList.add('hidden');
+}
+
+async function deleteHistory(id) {
+  if (!confirm('确定删除这条面试记录吗？')) return;
+  await apiFetch('/api/history/' + encodeURIComponent(id), { method: 'DELETE' });
+  backToList();
+  loadHistory();
+}
+
+// ── Resume upload ──
+const resumeFile = document.getElementById('resume-file');
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+resumeFile.addEventListener('change', async () => {
+  const file = resumeFile.files[0];
+  if (!file) return;
+  const nameEl = document.getElementById('resume-name');
+  nameEl.textContent = '读取中：' + file.name;
+  nameEl.className = 'resume-name';
+  try {
+    const dataBase64 = await readFileAsBase64(file);
+    const resp = await apiFetch('/api/resume/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, data_base64: dataBase64 }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      resumeText = null;
+      nameEl.textContent = '解析失败：' + (data.detail || file.name);
+      nameEl.className = 'resume-name error';
+      return;
+    }
+    resumeText = data.text;
+    nameEl.textContent = '已读取：' + file.name;
+    nameEl.className = 'resume-name ok';
+  } catch (e) {
+    resumeText = null;
+    nameEl.textContent = '上传失败：' + e.message;
+    nameEl.className = 'resume-name error';
+  }
+});
+
+// ── Init ──
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAnswer();
+  }
+});
+
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+
+// Start on the auth view if not logged in, otherwise the home view.
+initVoiceSettings();
+clearInputHint();
+if (authToken) { showView('home'); } else { showView('auth'); }
+setUIState('pre');
+</script>
+</body>
+</html>

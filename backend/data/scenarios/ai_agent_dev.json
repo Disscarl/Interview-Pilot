@@ -1,0 +1,70 @@
+{
+  "id": "ai_agent_dev",
+  "title": "AI Agent 应用开发工程师",
+  "description": "面向 AI Agent 应用开发岗位的技术面试，涵盖 LangChain、RAG、Agent 架构、LLM 应用等核心领域",
+  "company": "通用科技公司",
+  "tags": ["AI Agent", "LangChain", "RAG", "LLM", "Python"],
+  "phases": {
+    "intro": {
+      "description": "自我介绍和暖场",
+      "max_questions": 2,
+      "sample_questions": [
+        "请简单做个自我介绍，重点说说你在 AI 相关项目中的角色。",
+        "你对 AI Agent 这个方向有多久的了解？是什么吸引你进入这个领域的？"
+      ]
+    },
+    "warm_up": {
+      "description": "基础认知考查",
+      "max_questions": 3,
+      "sample_questions": [
+        "用你自己的话，Agent 和传统的 LLM Chatbot 最核心的区别是什么？",
+        "你用过哪些 AI Agent 相关的框架或工具？使用体验如何？",
+        "Function Calling 和 Tool Use 是 Agent 的核心能力，你能解释一下这一机制吗？"
+      ]
+    },
+    "tech_1": {
+      "description": "技术基础考查",
+      "max_questions": 5,
+      "sample_questions": [
+        "LangChain 的 Agent 有几种类型？它们的适用场景分别是什么？",
+        "RAG 系统中，chunk size 的选择会影响什么？你是如何确定的？",
+        "如果要让 Agent 能调用外部 API，你会怎么设计工具的接口？",
+        "Agent 的 memory 机制有哪些实现方式？各自的优缺点？",
+        "如何处理 Agent 调用工具时工具返回错误的情况？"
+      ]
+    },
+    "tech_2": {
+      "description": "项目深挖与自适应追问",
+      "max_questions": 6,
+      "sample_questions": [
+        "请详细描述你做过的一个最复杂的 AI Agent 或 LLM 集成项目。",
+        "在这个项目中，你遇到的最大技术挑战是什么？怎么解决的？",
+        "如果重新设计这个系统，你会做什么不同的技术决策？"
+      ]
+    },
+    "tech_3": {
+      "description": "架构设计与开放题",
+      "max_questions": 2,
+      "sample_questions": [
+        "如果让你设计一个同时服务 10000 个用户的 Agent 系统，架构上你会怎么考虑？",
+        "AI Agent 领域目前有哪些你认可的技术趋势？哪些是被过度炒作的？"
+      ]
+    },
+    "closing": {
+      "description": "收尾与候选人提问",
+      "max_questions": 1,
+      "sample_questions": [
+        "我们的面试接近尾声了，你有什么问题想问我吗？"
+      ]
+    }
+  },
+  "evaluation_rubric": {
+    "dimensions": [
+      {"name": "技术深度", "weight": 0.30, "description": "对 Agent/LLM 核心技术的理解深度"},
+      {"name": "项目经验", "weight": 0.25, "description": "真实项目落地经验和工程化能力"},
+      {"name": "架构思维", "weight": 0.20, "description": "系统设计能力和技术选型判断力"},
+      {"name": "沟通表达", "weight": 0.15, "description": "技术表达的清晰度和逻辑性"},
+      {"name": "学习能力", "weight": 0.10, "description": "对前沿技术的关注度和学习习惯"}
+    ]
+  }
+}
