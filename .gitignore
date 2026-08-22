@@ -23,6 +23,11 @@ _check.js
 # Internal notes (local todo/backlog, not part of the product)
 BACKLOG.md
 
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+
 # IDE
 .idea/
 .vscode/

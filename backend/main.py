@@ -579,12 +579,29 @@ async def websocket_interview(ws: WebSocket, session_id: str):
 
 # ─── Static files (frontend) ──────────────────────────────
 
-# Mount the frontend directory
 import os
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
+dist_dir = os.path.join(frontend_dir, "dist")
+
+
+@app.get("/")
+async def root():
+    # Production: serve the built Vite bundle when present.
+    dist_index = os.path.join(dist_dir, "index.html")
+    if os.path.isfile(dist_index):
+        return FileResponse(dist_index)
+    # Dev fallback: raw Vite entry (requires `npm run dev`).
+    dev_index = os.path.join(frontend_dir, "index.html")
+    if os.path.isfile(dev_index):
+        return FileResponse(dev_index)
+    raise HTTPException(status_code=404, detail="frontend not built")
+
+
+# Production: serve compiled assets (JS/CSS) emitted by `vite build`.
+dist_assets = os.path.join(dist_dir, "assets")
+if os.path.isdir(dist_assets):
+    app.mount("/assets", StaticFiles(directory=dist_assets), name="assets")
+
+# Legacy/dev: expose the raw frontend directory under /static.
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
-    @app.get("/")
-    async def root():
-        return FileResponse(os.path.join(frontend_dir, "index.html"))
