@@ -602,9 +602,10 @@ async def root():
 
 
 # Production: serve compiled assets (JS/CSS) emitted by `vite build`.
+# Always mount (check_dir=False) so a build produced after startup is picked up
+# without restarting the server.
 dist_assets = os.path.join(dist_dir, "assets")
-if os.path.isdir(dist_assets):
-    app.mount("/assets", StaticFiles(directory=dist_assets), name="assets")
+app.mount("/assets", StaticFiles(directory=dist_assets, check_dir=False), name="assets")
 
 # Legacy/dev: expose the raw frontend directory under /static.
 if os.path.exists(frontend_dir):
