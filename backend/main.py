@@ -590,7 +590,11 @@ async def root():
     dist_index = os.path.join(dist_dir, "index.html")
     if os.path.isfile(dist_index):
         return FileResponse(dist_index)
-    # Dev fallback: raw Vite entry (requires `npm run dev`).
+    # Pre-build fallback: self-contained single-file app (works without a build).
+    legacy_index = os.path.join(frontend_dir, "legacy.html")
+    if os.path.isfile(legacy_index):
+        return FileResponse(legacy_index)
+    # Dev: raw Vite entry (requires `npm run dev`).
     dev_index = os.path.join(frontend_dir, "index.html")
     if os.path.isfile(dev_index):
         return FileResponse(dev_index)
