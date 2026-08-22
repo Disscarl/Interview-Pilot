@@ -19,6 +19,9 @@ backend/data/tts_cache/
 _*.py
 _check.js
 
+# Internal notes (local todo/backlog, not part of the product)
+BACKLOG.md
+
 # IDE
 .idea/
 .vscode/
