@@ -17,6 +17,7 @@ backend/data/tts_cache/
 
 # Temp / scratch scripts
 _*.py
+!__init__.py
 _check.js
 
 # Internal notes (local todo/backlog, not part of the product)
