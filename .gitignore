@@ -12,6 +12,7 @@ backend/.env
 
 # Runtime data
 backend/data/interviews.db
+backend/data/interviews.db-*
 backend/data/audio/
 backend/data/tts_cache/
 
