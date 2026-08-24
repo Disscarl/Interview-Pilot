@@ -522,7 +522,7 @@ body {
 
 /* ── Radar chart (evaluation dimensions) ── */
 .radar-wrap { display: flex; justify-content: center; margin: 10px 0 4px; }
-.radar { width: 250px; height: 250px; }
+.radar { width: 270px; height: 270px; }
 .radar-grid { fill: none; stroke: var(--border); }
 .radar-axis { stroke: var(--border); stroke-width: 1; }
 .radar-data {
@@ -532,7 +532,7 @@ body {
   stroke-linejoin: round;
 }
 .radar-dot { fill: var(--gold); }
-.radar-label { fill: var(--text-dim); font-size: 11px; }
+.radar-label { fill: var(--text-dim); font-size: 10px; }
 
 /* ── Progress cards (multi-round comparison) ── */
 .progress-section { display: flex; flex-direction: column; gap: 14px; }

@@ -4,11 +4,11 @@ import { computed } from 'vue'
 
 const props = defineProps<{ dimensions: Record<string, number> }>()
 
-const SIZE = 280
+const SIZE = 320
 const CX = SIZE / 2
 const CY = SIZE / 2
-const RADIUS = 96
-const LABEL_RATIO = 1.22
+const RADIUS = 84
+const LABEL_RATIO = 1.32
 
 const entries = computed<{ label: string; score: number }[]>(() =>
   Object.entries(props.dimensions || {}).map(([label, score]) => ({
@@ -95,6 +95,7 @@ const labelPositions = computed(() =>
         :x="lp.x"
         :y="lp.y"
         :text-anchor="lp.anchor"
+        dominant-baseline="central"
         class="radar-label"
       >
         {{ lp.label }}
