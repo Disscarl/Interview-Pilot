@@ -5,7 +5,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from services.history import (
     init_db, create_user, get_user_by_username, get_user_by_id,
-    save_interview, list_interviews, get_interview, delete_interview,
+    save_interview, list_interviews, get_interview, delete_interview, list_progress,
 )
 from services.auth import hash_password
 
@@ -56,6 +56,34 @@ class HistoryTest(IsolatedAsyncioTestCase):
         rec = await get_interview("sess_none", a)
         self.assertIsNotNone(rec)
         self.assertEqual(rec["report"], {})
+
+    async def test_list_progress_groups(self):
+        a = await create_user("prog", "h")
+        msg = [{"role": "interviewer", "content": "你好", "phase": "intro"}]
+        r1 = {"overall_score": 3.0, "summary": "s",
+              "dimension_scores": {"沟通": {"score": 3, "comment": "c"}}}
+        r2 = {"overall_score": 4.0, "summary": "s2",
+              "dimension_scores": {"沟通": {"score": 4, "comment": "c"}}}
+        await save_interview("p1", "UE开发", "某公司", msg, r1, a)
+        await save_interview("p2", "UE开发", "某公司", msg, r2, a)
+        await save_interview("p3", "后端", "", msg, r1, a)
+
+        groups = await list_progress(a)
+        by_role = {g["role_title"]: g for g in groups}
+        self.assertEqual(len(by_role), 2)
+
+        ue = by_role["UE开发"]
+        self.assertEqual(ue["company_name"], "某公司")
+        self.assertEqual(len(ue["attempts"]), 2)
+        # oldest first, with parsed dimension scores
+        self.assertEqual([t["overall_score"] for t in ue["attempts"]], [3.0, 4.0])
+        self.assertEqual(ue["attempts"][0]["dimension_scores"]["沟通"]["score"], 3)
+
+        self.assertEqual(len(by_role["后端"]["attempts"]), 1)
+
+        # other users see nothing
+        b = await create_user("prog2", "h")
+        self.assertEqual(await list_progress(b), [])
 
 
 if __name__ == "__main__":

@@ -1,11 +1,14 @@
 """Core Interviewer (LLM chain) — manages the interview flow and generates questions."""
 import json
+import logging
 from typing import AsyncGenerator
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from models.interview import InterviewState, InterviewPhase
 from services.llm import get_default_llm
 from agent.prompts import SYSTEM_PROMPT
+
+logger = logging.getLogger("interview-pilot")
 
 # Phase descriptions and max questions
 PHASE_CONFIG = {
@@ -158,7 +161,7 @@ class InterviewerAgent:
             return ""
         return "- " + "\n- ".join(lines)
 
-    def _build_system_prompt(self, state: InterviewState) -> str:
+    def _build_system_prompt(self, state: InterviewState, score_info: dict | None = None) -> str:
         """Build the system prompt for the current state."""
         config = self._get_phase_config(state.phase)
         jd_section = ""
@@ -173,6 +176,14 @@ class InterviewerAgent:
                 "## 候选人画像（来自简历，务必结合其真实经历提问）\n"
                 + self._build_candidate_context(state)
             )
+        score_section = ""
+        if score_info:
+            score_section = (
+                "## 回答质量评估（基于候选人最近一次回答，请据此调整本题难度）\n"
+                f"- 质量评分：{score_info['score']}/5；短板提示：{score_info['weakness_hint'] or '无'}\n"
+                "- 评分 ≤ 2 → 先追问细节、适当降低难度引导；评分 = 3 → 保持难度并追问一个关键细节；"
+                "评分 ≥ 4 → 提升到架构/方案/设计层面的深度问题。"
+            )
         return SYSTEM_PROMPT.format(
             role=state.role_title or state.scenario_id,
             phase=state.phase.value,
@@ -181,11 +192,46 @@ class InterviewerAgent:
             max_questions=config["max_questions"],
             jd_section=jd_section,
             candidate_section=candidate_section,
+            score_section=score_section,
         )
 
-    def _build_history(self, state: InterviewState) -> list:
+    async def _score_last_answer(self, state: InterviewState) -> dict | None:
+        """Score the candidate's most recent answer (1-5) to adapt question difficulty.
+
+        Returns {"score": int, "weakness_hint": str}, or None on any failure —
+        callers must not depend on it; the interview proceeds without scoring.
+        Adds one short LLM call per answered turn.
+        """
+        answer = state.get_last_answer()
+        if not answer:
+            return None
+        try:
+            from agent.prompts import ANSWER_SCORER_PROMPT
+            resp = await self.llm.ainvoke(
+                ANSWER_SCORER_PROMPT.format_messages(
+                    role=state.role_title or state.scenario_id,
+                    answer=answer[:2000],
+                )
+            )
+            content = str(resp.content or "").strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            data = json.loads(content)
+            score = int(data.get("score", 3))
+            score = max(1, min(5, score))
+            return {
+                "score": score,
+                "weakness_hint": str(data.get("weakness_hint", ""))[:50],
+            }
+        except Exception as e:
+            logger.warning("Answer scoring failed: %s", e)
+            return None
+
+    def _build_history(self, state: InterviewState, score_info: dict | None = None) -> list:
         """Build LangChain message history from interview state."""
-        messages = [SystemMessage(content=self._build_system_prompt(state))]
+        messages = [SystemMessage(content=self._build_system_prompt(state, score_info))]
         # Only include the last 10 messages to keep context manageable
         recent = state.messages[-10:] if len(state.messages) > 10 else state.messages
         for msg in recent:
@@ -202,7 +248,8 @@ class InterviewerAgent:
             old_phase = state.phase
             state.phase = self._next_phase(old_phase)
 
-        messages = self._build_history(state)
+        score_info = await self._score_last_answer(state)
+        messages = self._build_history(state, score_info)
         candidate_answer = state.get_last_answer() or "（面试开始，请面试官先发言）"
 
         # Add the current prompt
@@ -220,7 +267,8 @@ class InterviewerAgent:
         if self.should_transition(state):
             state.phase = self._next_phase(state.phase)
 
-        messages = self._build_history(state)
+        score_info = await self._score_last_answer(state)
+        messages = self._build_history(state, score_info)
         candidate_answer = state.get_last_answer() or "（面试开始，请面试官先发言）"
 
         messages.append(HumanMessage(content=f"候选人的最新回答:\n{candidate_answer}\n\n请根据你的追问规则，给出下一个面试官发言。"))

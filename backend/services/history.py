@@ -169,3 +169,37 @@ async def list_all_session_ids() -> set:
         cursor = await db.execute("SELECT id FROM interviews")
         rows = await cursor.fetchall()
     return {r[0] for r in rows}
+
+
+async def list_progress(user_id: int) -> list:
+    """Group a user's interviews by (role_title, company_name) for trend views.
+
+    Returns [{"role_title", "company_name", "attempts": [
+        {"id", "created_at", "overall_score", "dimension_scores"}  # oldest first
+    ]}] — one entry per distinct position, attempts sorted by time.
+    """
+    async with aiosqlite.connect(_DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        cursor = await db.execute(
+            "SELECT id, role_title, company_name, created_at, overall_score, report "
+            "FROM interviews WHERE user_id = ? ORDER BY created_at ASC",
+            (user_id,),
+        )
+        rows = await cursor.fetchall()
+    groups: dict[tuple, dict] = {}
+    for row in rows:
+        d = _row_to_dict(row)
+        report = json.loads(d["report"]) if d["report"] else {}
+        key = (d.get("role_title") or "面试", d.get("company_name") or "")
+        group = groups.setdefault(key, {
+            "role_title": key[0],
+            "company_name": key[1],
+            "attempts": [],
+        })
+        group["attempts"].append({
+            "id": d["id"],
+            "created_at": d["created_at"],
+            "overall_score": d["overall_score"],
+            "dimension_scores": report.get("dimension_scores") or {},
+        })
+    return list(groups.values())

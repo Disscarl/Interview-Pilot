@@ -99,6 +99,14 @@ class ApiTest(TestCase):
         )
         self.assertEqual(r.status_code, 422)
 
+    def test_history_progress_endpoint(self):
+        c = self.client
+        self.assertEqual(c.get("/api/history/progress").status_code, 401)
+        token = self._register("dave")
+        r = c.get("/api/history/progress", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["groups"], [])
+
 
 if __name__ == "__main__":
     import unittest

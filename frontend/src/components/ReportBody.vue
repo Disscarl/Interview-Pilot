@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Report } from '../types'
+import RadarChart from './RadarChart.vue'
 
 const props = defineProps<{ report: Report }>()
 
@@ -11,10 +13,18 @@ function pct(score: number | undefined): number {
 function dimEntries(): [string, { score: number; comment?: string }][] {
   return Object.entries(props.report.dimension_scores || {})
 }
+
+const dimScores = computed<Record<string, number>>(() => {
+  const out: Record<string, number> = {}
+  for (const [name, dim] of dimEntries()) out[name] = dim.score
+  return out
+})
 </script>
 
 <template>
   <p class="report-summary">{{ report.summary || '' }}</p>
+
+  <RadarChart v-if="Object.keys(dimScores).length >= 3" :dimensions="dimScores" />
 
   <template v-for="[name, dim] in dimEntries()" :key="name">
     <div class="dimension-bar">

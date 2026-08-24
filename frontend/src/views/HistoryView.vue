@@ -6,6 +6,7 @@ import {
   historyDetail,
   historyLoading,
   historyError,
+  progressGroups,
   viewHistoryDetail,
   backToList,
   deleteHistory,
@@ -13,6 +14,7 @@ import {
 import type { ChatMessage } from '../types'
 import MessageBubble from '../components/MessageBubble.vue'
 import ReportBody from '../components/ReportBody.vue'
+import ProgressCard from '../components/ProgressCard.vue'
 
 function goHome(): void {
   showView('home')
@@ -43,6 +45,12 @@ const detailMessages = computed<ChatMessage[]>(() =>
     </div>
 
     <div class="history-container">
+      <!-- Progress (multi-round comparison) -->
+      <div v-if="!historyDetail && progressGroups.length" class="progress-section">
+        <div class="section-title">📈 进步趋势（按岗位分组）</div>
+        <ProgressCard v-for="(g, i) in progressGroups" :key="i" :group="g" />
+      </div>
+
       <!-- List -->
       <div v-if="!historyDetail" id="history-list">
         <div v-if="historyLoading" class="history-empty">加载中…</div>

@@ -110,6 +110,19 @@ export interface HistoryRecord {
   messages?: TranscriptMessage[]
 }
 
+export interface ProgressAttempt {
+  id: string
+  created_at?: string
+  overall_score?: number
+  dimension_scores?: Record<string, ReportDimension>
+}
+
+export interface ProgressGroup {
+  role_title: string
+  company_name: string
+  attempts: ProgressAttempt[]
+}
+
 export interface CandidateVoiceData {
   text?: string
   error?: string

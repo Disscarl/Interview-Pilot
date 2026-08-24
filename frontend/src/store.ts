@@ -8,6 +8,7 @@ import type {
   HistoryItem,
   HistoryRecord,
   JdAnalysis,
+  ProgressGroup,
   Report,
   TranscriptMessage,
   TtsVoice,
@@ -786,6 +787,7 @@ export const historyItems = ref<HistoryItem[]>([])
 export const historyDetail = ref<HistoryRecord | null>(null)
 export const historyLoading = ref(false)
 export const historyError = ref('')
+export const progressGroups = ref<ProgressGroup[]>([])
 
 export async function openHistory(): Promise<void> {
   showView('history')
@@ -797,7 +799,9 @@ export async function loadHistory(): Promise<void> {
   historyError.value = ''
   historyDetail.value = null
   try {
-    historyItems.value = await api.listHistory()
+    const [items, groups] = await Promise.all([api.listHistory(), api.listProgress()])
+    historyItems.value = items
+    progressGroups.value = groups
   } catch (e) {
     historyError.value = e instanceof Error ? e.message : '加载失败'
   } finally {

@@ -12,6 +12,7 @@ SYSTEM_PROMPT = """你是一位资深面试官，正在面试一位 {role} 的�
 
 {jd_section}
 {candidate_section}
+{score_section}
 ## 当前面试阶段: {phase}
 - 阶段说明: {phase_description}
 - 当前已经问了 {question_count} 个问题
@@ -31,6 +32,24 @@ INTERVIEWER_PROMPT = ChatPromptTemplate.from_messages([
     ("system", SYSTEM_PROMPT),
     MessagesPlaceholder(variable_name="history"),
     ("human", "候选人的最新回答:\n{candidate_answer}\n\n请根据你的追问规则，给出下一个面试官发言。"),
+])
+
+
+# Prompt for per-answer quality scoring (drives adaptive difficulty)
+ANSWER_SCORER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """你是一位面试官助手。根据候选人的最近一次回答，快速评估其质量，输出一个 JSON 对象（不要任何其他文字）：
+{{
+    "score": 3,
+    "weakness_hint": "30字以内的一句话短板提示（如：缺乏具体细节 / 未讲清技术决策 / 回答空泛）"
+}}
+
+评分标准：
+1 = 完全没答上/答非所问
+2 = 空泛、没有细节
+3 = 基本正确但缺乏深度
+4 = 有细节、有依据
+5 = 深入且有独到见解"""),
+    ("human", "岗位：{role}\n\n候选人回答：\n{answer}"),
 ])
 
 

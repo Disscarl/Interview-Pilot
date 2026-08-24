@@ -28,7 +28,7 @@ from services.jd import analyze_jd, analyze_candidate
 from services.resume import extract_text
 from services.history import (
     init_db, save_interview, list_interviews, get_interview, delete_interview,
-    list_all_session_ids, create_user, get_user_by_username, get_user_by_id,
+    list_all_session_ids, list_progress, create_user, get_user_by_username, get_user_by_id,
 )
 from services.tts import synthesize_cached
 from services.asr import transcribe_wav, AsrNotConfigured
@@ -376,6 +376,16 @@ async def analyze_jd_endpoint(req: JDRequest, user: dict = Depends(get_current_u
 async def list_history(user: dict = Depends(get_current_user)):
     """List the current user's past interviews (newest first)."""
     return {"interviews": await list_interviews(user["id"])}
+
+
+@app.get("/api/history/progress")
+async def history_progress(user: dict = Depends(get_current_user)):
+    """Return per-position progress groups (attempts over time) for trend charts.
+
+    Declared before /api/history/{interview_id} so "progress" is not captured
+    as an interview id.
+    """
+    return {"groups": await list_progress(user["id"])}
 
 
 @app.get("/api/history/{interview_id}")
