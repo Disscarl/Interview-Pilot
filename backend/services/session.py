@@ -30,13 +30,20 @@ class SessionManager:
     async def create(
         self, session_id: str, scenario_id: str, role_title: str = "",
         jd: Optional[dict] = None, user_id: int = 0,
-    ) -> InterviewState:
-        """Create a new interview session (idempotent — reuse existing session)."""
+    ) -> Optional[InterviewState]:
+        """Create a new interview session (idempotent — reuse existing session).
+
+        Returns None if the session already exists but belongs to a different
+        user (prevents cross-user hijack of an in-progress interview).
+        """
         async with self._lock:
             self._sweep_locked()
-            if session_id in self._sessions:
+            existing = self._sessions.get(session_id)
+            if existing is not None:
+                if existing.user_id != user_id:
+                    return None
                 self._last_seen[session_id] = time.time()
-                return self._sessions[session_id]
+                return existing
             state = InterviewState(
                 session_id=session_id,
                 scenario_id=scenario_id,

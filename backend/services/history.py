@@ -43,6 +43,20 @@ async def init_db(path: str):
         columns = [row[1] for row in await cursor.fetchall()]
         if "user_id" not in columns:
             await db.execute("ALTER TABLE interviews ADD COLUMN user_id INTEGER")
+
+        # One-time migration: assign pre-auth orphan rows (user_id IS NULL) to
+        # the reserved legacy owner account so they stay visible.
+        cursor = await db.execute("SELECT id FROM users WHERE username = ?", ("qqqqq",))
+        row = await cursor.fetchone()
+        if row:
+            owner_id = row[0]
+        else:
+            cursor = await db.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("qqqqq", "$legacy$no-login", time.strftime("%Y-%m-%d %H:%M:%S")),
+            )
+            owner_id = cursor.lastrowid
+        await db.execute("UPDATE interviews SET user_id = ? WHERE user_id IS NULL", (owner_id,))
         await db.commit()
 
 
@@ -81,8 +95,13 @@ async def get_user_by_id(user_id: int) -> dict | None:
 # ─── Interviews ───────────────────────────────────────────
 
 async def save_interview(session_id: str, role_title: str, company_name: str,
-                         messages: list, report: dict, user_id: int):
-    """Persist a completed interview (transcript + report) for a user."""
+                         messages: list, report: dict | None, user_id: int):
+    """Persist a completed interview (transcript + report) for a user.
+
+    `report` may be None (e.g. evaluation failed) — the row is still saved
+    with an empty report so the transcript is never lost.
+    """
+    report = report or {}
     async with aiosqlite.connect(_DB_PATH) as db:
         await db.execute(
             """
@@ -129,8 +148,8 @@ async def get_interview(interview_id: str, user_id: int) -> dict | None:
     if not row:
         return None
     d = _row_to_dict(row)
-    d["messages"] = json.loads(d["messages"])
-    d["report"] = json.loads(d["report"])
+    d["messages"] = json.loads(d["messages"]) if d["messages"] else []
+    d["report"] = json.loads(d["report"]) if d["report"] else {}
     return d
 
 

@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import json
+import logging
 import os
 import re
 import sys
@@ -40,6 +41,31 @@ interviewer = InterviewerAgent()
 evaluator = EvaluatorAgent()
 
 
+# ─── Access-log token redaction ───────────────────────────
+# WS/audio auth tokens ride in query strings, which uvicorn's access log
+# records verbatim; mask them so secrets don't land in log files.
+
+_TOKEN_RE = re.compile(r"(token|Token|TOKEN)=([^&\s\"']+)")
+
+
+class _TokenRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_RE.sub(r"\1=***", record.msg)
+        if record.args:
+            try:
+                record.args = tuple(
+                    _TOKEN_RE.sub(r"\1=***", a) if isinstance(a, str) else a
+                    for a in record.args
+                )
+            except TypeError:
+                record.args = None
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_TokenRedactionFilter())
+
+
 # ─── Auth ─────────────────────────────────────────────────
 
 async def get_current_user(authorization: str | None = Header(default=None)) -> dict:
@@ -72,6 +98,17 @@ _MAX_JD_RESUME = 20000
 _MAX_TTS_TEXT = 500
 _MAX_RESUME_BYTES = 10 * 1024 * 1024
 _MAX_AUDIO_BYTES = 15 * 1024 * 1024
+_MAX_ANSWER_TEXT = 5000
+_MAX_SETUP_BYTES = 128 * 1024
+
+_FALLBACK_REPORT = {
+    "overall_score": 0,
+    "summary": "评估生成失败，请查看对话记录。",
+    "dimension_scores": {},
+    "highlights": [],
+    "weak_points": [],
+    "recommended_topics": [],
+}
 
 
 def _enforce_rate_limit(bucket: str, user_id: int) -> None:
@@ -107,9 +144,13 @@ async def after_candidate_answer(ws: WebSocket, state) -> bool:
             "type": "interview_end",
             "content": "面试结束，正在生成评估报告...",
         }))
-        report = await evaluator.evaluate(state)
+        report = None
+        try:
+            report = await evaluator.evaluate(state)
+        except Exception as e:
+            logger.error("Evaluation failed: %s", e)
         await save_history(state, report)
-        await ws.send_text(json.dumps({"type": "report", "report": report}))
+        await ws.send_text(json.dumps({"type": "report", "report": report or _FALLBACK_REPORT}))
         return True
     await send_streamed(ws, state)
     return False
@@ -203,7 +244,8 @@ async def register(req: AuthRequest, request: Request):
         raise HTTPException(status_code=422, detail="用户名长度需在 2-64 之间")
     if len(password) < 4 or len(password) > 128:
         raise HTTPException(status_code=422, detail="密码长度需在 4-128 之间")
-    user_id = await create_user(username, hash_password(password))
+    hashed = await asyncio.to_thread(hash_password, password)
+    user_id = await create_user(username, hashed)
     if user_id is None:
         raise HTTPException(status_code=409, detail="用户名已存在")
     return {"token": create_token(user_id), "username": username}
@@ -218,7 +260,7 @@ async def login(req: AuthRequest, request: Request):
     if len(req.password) > 128:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     user = await get_user_by_username(username)
-    if not user or not verify_password(req.password, user["password_hash"]):
+    if not user or not await asyncio.to_thread(verify_password, req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     return {"token": create_token(user["id"]), "username": username}
 
@@ -232,7 +274,7 @@ async def me(user: dict = Depends(get_current_user)):
 # ─── REST endpoints ──────────────────────────────────────
 
 @app.get("/api/scenarios")
-async def list_scenarios():
+async def list_scenarios(user: dict = Depends(get_current_user)):
     """Return available interview scenarios."""
     import os
     import glob
@@ -252,12 +294,14 @@ async def list_scenarios():
 
 
 @app.get("/api/scenarios/{scenario_id}")
-async def get_scenario(scenario_id: str):
+async def get_scenario(scenario_id: str, user: dict = Depends(get_current_user)):
     """Get a specific scenario config."""
+    if not _ID_RE.match(scenario_id):
+        raise HTTPException(status_code=400, detail="非法路径")
     import os
     path = os.path.join(os.path.dirname(__file__), "data", "scenarios", f"{scenario_id}.json")
     if not os.path.exists(path):
-        return {"error": "Scenario not found"}, 404
+        raise HTTPException(status_code=404, detail="Scenario not found")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -284,7 +328,7 @@ async def extract_resume_endpoint(req: ResumeUpload, user: dict = Depends(get_cu
     if len(data) > _MAX_RESUME_BYTES:
         raise HTTPException(status_code=422, detail="文件过大（最多 10MB）")
     try:
-        text = extract_text(req.filename, data)
+        text = await asyncio.to_thread(extract_text, req.filename, data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"filename": req.filename, "text": text}
@@ -419,10 +463,19 @@ async def websocket_interview(ws: WebSocket, session_id: str):
     try:
         # First message: setup (scenario selection or create new)
         raw = await ws.receive_text()
-        setup = json.loads(raw)
+        if len(raw) > _MAX_SETUP_BYTES:
+            await ws.send_text(json.dumps({"type": "error", "content": "消息过大"}))
+            return
+        try:
+            setup = json.loads(raw)
+        except Exception:
+            await ws.send_text(json.dumps({"type": "error", "content": "消息格式错误"}))
+            return
 
         if setup.get("action") == "create":
             scenario_id = setup.get("scenario_id") or ""
+            if scenario_id and not _ID_RE.match(scenario_id):
+                scenario_id = ""
             jd = setup.get("jd")  # optional {"profile": ..., "plan": ...}
 
             # Resolve a human-readable role title for the interviewer prompt.
@@ -445,6 +498,13 @@ async def websocket_interview(ws: WebSocket, session_id: str):
             state = await session_manager.create(
                 session_id, scenario_id or "generic", role_title, jd, user_id=user_id
             )
+            if state is None:
+                # Session exists but belongs to a different user — refuse.
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "content": "该面试会话不属于当前用户",
+                }))
+                return
             if setup.get("resume") and state.messages:
                 # Reconnect: replay history and continue without a new question.
                 await ws.send_text(json.dumps({
@@ -467,11 +527,21 @@ async def websocket_interview(ws: WebSocket, session_id: str):
         # Main loop: receive candidate answers, send interviewer responses
         while True:
             raw = await ws.receive_text()
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+            except Exception:
+                await ws.send_text(json.dumps({"type": "error", "content": "消息格式错误"}))
+                continue
             action = data.get("action", "answer")
 
             if action == "answer":
-                candidate_text = data.get("content", "")
+                candidate_text = str(data.get("content", ""))
+                if len(candidate_text) > _MAX_ANSWER_TEXT:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "content": f"回答过长（最多 {_MAX_ANSWER_TEXT} 字）",
+                    }))
+                    continue
                 state.add_message("candidate", candidate_text)
                 if await after_candidate_answer(ws, state):
                     ended = True
@@ -546,11 +616,15 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     "type": "interview_end",
                     "content": "面试已结束，正在生成评估报告...",
                 }))
-                report = await evaluator.evaluate(state)
+                report = None
+                try:
+                    report = await evaluator.evaluate(state)
+                except Exception as e:
+                    logger.error("Evaluation failed: %s", e)
                 await save_history(state, report)
                 await ws.send_text(json.dumps({
                     "type": "report",
-                    "report": report,
+                    "report": report or _FALLBACK_REPORT,
                 }))
                 ended = True
                 break
@@ -606,7 +680,3 @@ async def root():
 # without restarting the server.
 dist_assets = os.path.join(dist_dir, "assets")
 app.mount("/assets", StaticFiles(directory=dist_assets, check_dir=False), name="assets")
-
-# Legacy/dev: expose the raw frontend directory under /static.
-if os.path.exists(frontend_dir):
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")

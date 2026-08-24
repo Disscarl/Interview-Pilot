@@ -3,6 +3,7 @@
 Uses the same iFlytek APPID/APIKey/APISecret as STT. Returns MP3 bytes for
 browser playback. Falls back to "no voice" on any failure.
 """
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -23,6 +24,8 @@ IFLYTEK_API_SECRET = settings.iflytek_api_secret
 
 _TTS_HOST = "cbm01.cn-huabei-1.xf-yun.com"
 _TTS_PATH = "/v1/private/mcd9m97e6"
+_TTS_TIMEOUT_SECONDS = 30.0
+_TTS_CACHE_MAX_FILES = 1000
 
 _VOICE_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -129,8 +132,11 @@ async def synthesize(text: str, voice: str | None = None, speed: int | None = No
     }
 
     audio = bytearray()
-    try:
-        async with websockets.connect(_build_tts_auth_url(), max_size=20 * 1024 * 1024) as ws:
+
+    async def _run() -> bytes | None:
+        async with websockets.connect(
+            _build_tts_auth_url(), max_size=20 * 1024 * 1024, open_timeout=30
+        ) as ws:
             await ws.send(json.dumps(request))
             async for message in ws:
                 if not isinstance(message, str):
@@ -150,11 +156,13 @@ async def synthesize(text: str, voice: str | None = None, speed: int | None = No
                     audio.extend(base64.b64decode(audio_b64))
                 if chunk.get("status") == 2:
                     break
+        return bytes(audio) if audio else None
+
+    try:
+        return await asyncio.wait_for(_run(), timeout=_TTS_TIMEOUT_SECONDS)
     except Exception as e:
         logger.warning("iFlytek TTS synthesis failed: %s", e)
         return None
-
-    return bytes(audio) if audio else None
 
 
 def _cache_key(text: str, voice: str, speed: int) -> str:
@@ -163,6 +171,25 @@ def _cache_key(text: str, voice: str, speed: int) -> str:
 
 def _cache_path(key: str) -> Path:
     return Path(settings.tts_cache_dir) / f"{key}.mp3"
+
+
+def _evict_cache_if_needed() -> None:
+    """Bound the TTS cache: delete oldest-by-mtime files over the cap."""
+    cache_dir = Path(settings.tts_cache_dir)
+    if not cache_dir.is_dir():
+        return
+    try:
+        files = [p for p in cache_dir.glob("*.mp3") if p.is_file()]
+    except OSError:
+        return
+    if len(files) <= _TTS_CACHE_MAX_FILES:
+        return
+    excess = len(files) - _TTS_CACHE_MAX_FILES
+    for p in sorted(files, key=lambda p: p.stat().st_mtime)[:excess]:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 async def synthesize_cached(text: str, voice: str | None = None, speed: int | None = None) -> bytes | None:
@@ -191,6 +218,7 @@ async def synthesize_cached(text: str, voice: str | None = None, speed: int | No
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(audio)
+            _evict_cache_if_needed()
         except Exception as e:
             logger.warning("TTS cache write failed: %s", e)
     return audio

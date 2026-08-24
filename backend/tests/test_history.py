@@ -48,6 +48,15 @@ class HistoryTest(IsolatedAsyncioTestCase):
         self.assertTrue(await delete_interview("sess_a", a))
         self.assertEqual(len(await list_interviews(a)), 0)
 
+    async def test_save_interview_with_none_report(self):
+        # Evaluation failure must not lose the transcript row.
+        a = await create_user("noreport", "h")
+        messages = [{"role": "interviewer", "content": "你好"}]
+        await save_interview("sess_none", "岗位", "公司", messages, None, a)
+        rec = await get_interview("sess_none", a)
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec["report"], {})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,7 @@ SEGMENT_SECONDS = 55  # under iFlytek's 60s per-request cap
 SEGMENT_BYTES = SEGMENT_SECONDS * BYTES_PER_SECOND
 FRAME_BYTES = 8192  # audio bytes per WS frame
 MAX_CONCURRENCY = 4
+_ASR_SEGMENT_TIMEOUT = 40.0
 
 
 class AsrNotConfigured(Exception):
@@ -82,9 +83,11 @@ async def _transcribe_segment(pcm: bytes) -> str:
 
     import websockets
 
-    words_by_sn = {}
-    try:
-        async with websockets.connect(_build_auth_url(), max_size=1024 * 1024) as ws:
+    async def _run() -> str:
+        words_by_sn = {}
+        async with websockets.connect(
+            _build_auth_url(), max_size=1024 * 1024, open_timeout=30
+        ) as ws:
             for idx, frame in enumerate(frames):
                 status = 0 if idx == 0 else (2 if idx == total - 1 else 1)
                 await ws.send(make_frame(status, frame))
@@ -109,11 +112,13 @@ async def _transcribe_segment(pcm: bytes) -> str:
                             words_by_sn.setdefault(sn, []).append(w)
                 if data.get("status") == 2 and result.get("ls"):
                     break
+        return "".join("".join(words_by_sn[k]) for k in sorted(words_by_sn))
+
+    try:
+        return await asyncio.wait_for(_run(), timeout=_ASR_SEGMENT_TIMEOUT)
     except Exception as e:
         logger.warning("iFlytek ASR segment transcribe failed: %s", e)
         return ""
-
-    return "".join("".join(words_by_sn[k]) for k in sorted(words_by_sn))
 
 
 async def _transcribe_segment_retry(pcm: bytes) -> str:
@@ -127,17 +132,38 @@ async def _transcribe_segment_retry(pcm: bytes) -> str:
 
 
 def _pcm_from_wav(wav: bytes) -> bytes:
-    """Extract the PCM 'data' chunk from a RIFF/WAVE file."""
+    """Extract the PCM 'data' chunk from a RIFF/WAVE file.
+
+    Validates the 'fmt ' chunk: only 16 kHz / 16-bit / mono is supported
+    (matches what the browser recorder produces and iFlytek expects).
+    """
     if len(wav) < 12 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
         raise ValueError("无效的 WAV 音频")
     offset = 12
+    fmt_info = None
+    data_offset = None
+    data_size = None
     while offset + 8 <= len(wav):
         chunk_id = wav[offset:offset + 4]
         size = int.from_bytes(wav[offset + 4:offset + 8], "little")
-        if chunk_id == b"data":
-            return wav[offset + 8:offset + 8 + size]
-        offset += 8 + size + (size & 1)  # chunks are word-aligned
-    raise ValueError("WAV 缺少 data 块")
+        body = offset + 8
+        if chunk_id == b"fmt " and size >= 16:
+            fmt_info = wav[body:body + size]
+        elif chunk_id == b"data":
+            data_offset = body
+            data_size = size
+            break
+        offset = body + size + (size & 1)  # chunks are word-aligned
+    if fmt_info is None:
+        raise ValueError("WAV 缺少 fmt 块")
+    channels = int.from_bytes(fmt_info[2:4], "little")
+    sample_rate = int.from_bytes(fmt_info[4:8], "little")
+    bits = int.from_bytes(fmt_info[14:16], "little")
+    if sample_rate != 16000 or channels != 1 or bits != 16:
+        raise ValueError("仅支持 16000Hz / 16bit / 单声道 WAV")
+    if data_offset is None or data_size is None:
+        raise ValueError("WAV 缺少 data 块")
+    return wav[data_offset:data_offset + data_size]
 
 
 async def transcribe_wav(wav: bytes) -> dict:

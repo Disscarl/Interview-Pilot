@@ -74,4 +74,9 @@ logger = setup_logging()
 
 if settings.jwt_secret == "dev-insecure-secret-change-me":
     logger.warning("JWT_SECRET is using the dev default — set it in backend/.env before public deployment")
+    if os.getenv("INTERVIEW_PILOT_ENV", "").strip().lower() == "prod":
+        raise RuntimeError(
+            "Refusing to start in prod: JWT_SECRET is still the dev default. "
+            "Set a real JWT_SECRET in backend/.env (or INTERVIEW_PILOT_ENV=dev)."
+        )
 

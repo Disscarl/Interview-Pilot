@@ -25,6 +25,16 @@ class WavParseTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             _pcm_from_wav(b"RIFF" + struct.pack("<I", 36) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 16000, 32000, 2, 16))
 
+    def test_rejects_unsupported_format(self):
+        # 48 kHz mono 16-bit WAV must be rejected, not blindly parsed.
+        bad = (
+            b"RIFF" + struct.pack("<I", 36 + 4) + b"WAVE"
+            + b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, 48000, 48000 * 2, 2, 16)
+            + b"data" + struct.pack("<I", 4) + b"\x00\x00\x01\x00"
+        )
+        with self.assertRaises(ValueError):
+            _pcm_from_wav(bad)
+
 
 class SegmentConfigTest(unittest.TestCase):
     def test_segment_is_under_60s(self):
