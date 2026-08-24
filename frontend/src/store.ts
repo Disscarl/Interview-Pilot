@@ -66,13 +66,15 @@ function enterApp(): void {
   showView('home')
 }
 
-export function logout(): void {
-  api.setToken('')
+function resetInterviewState(): void {
+  stopTtsAudio()
+  if (recording.value) cancelRecording()
   closedByUser = true
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  clearCreateRetry()
   if (ws) {
     ws.onclose = null
     try {
@@ -83,6 +85,25 @@ export function logout(): void {
   }
   ws = null
   connected.value = false
+  currentJd = null
+  plan.value = null
+  streamId = null
+  pendingVoiceMsgId.value = null
+  messages.value = []
+  inputText.value = ''
+  clearInputHint()
+  setPhaseBadge(null)
+}
+
+export function logout(): void {
+  api.setToken('')
+  resetInterviewState()
+  // Never leak the previous user's resume/JD into the next login.
+  resumeText = null
+  jdText.value = ''
+  jdCompany.value = ''
+  resumeName.value = '未选择文件'
+  resumeState.value = ''
   showView('auth')
 }
 
@@ -196,6 +217,32 @@ export function stopTtsAudio(): void {
   }
 }
 
+// ── Voice-bar playback (coordinated with TTS) ─────────────
+let activeVoiceAudio: HTMLAudioElement | null = null
+
+export function stopVoicePlayback(): void {
+  if (activeVoiceAudio) {
+    try {
+      activeVoiceAudio.pause()
+    } catch {
+      /* ignore */
+    }
+    activeVoiceAudio = null
+  }
+}
+
+export function playVoiceUrl(url: string): HTMLAudioElement | null {
+  // Only one thing plays at a time: stop any TTS and any other voice bar.
+  stopTtsAudio()
+  stopVoicePlayback()
+  try {
+    activeVoiceAudio = new Audio(url)
+  } catch {
+    return null
+  }
+  return activeVoiceAudio
+}
+
 export async function playMessageTts(text: string): Promise<void> {
   if (!text || !text.trim()) return
   try {
@@ -239,12 +286,12 @@ let reconnectAttempts = 0
 let reconnectTimer: number | null = null
 let shouldResume = false
 let streamId: number | null = null
+let createRetryTimer: number | null = null
 const pendingVoiceMsgId = ref<number | null>(null)
 let nextMsgId = 1
 
 export const streaming = ref(false)
 export const recording = ref(false)
-export const recordingSeconds = ref(0)
 
 export const micDisabled = () => uiState.value !== 'active' || pendingVoiceMsgId.value !== null
 export const sendDisabled = () =>
@@ -299,6 +346,7 @@ function removeTyping(): void {
 }
 
 function appendStreamToken(token: string): void {
+  if (streamId === null && !streaming.value) return // stale token — ignore
   let msg = streamId !== null ? messages.value.find((m) => m.id === streamId) : undefined
   if (!msg) {
     const id = nextMsgId++
@@ -327,7 +375,7 @@ function endStream(phase?: string): void {
   streamId = null
   streaming.value = false
   if (phase) setPhaseBadge(phase)
-  setUIState('active')
+  if (uiState.value !== 'done') setUIState('active')
 }
 
 function connectWs(): void {
@@ -342,6 +390,7 @@ function connectWs(): void {
   ws.onopen = () => {
     connected.value = true
     reconnectAttempts = 0
+    clearCreateRetry()
     if (shouldResume) {
       shouldResume = false
       sendCreate(true)
@@ -360,6 +409,7 @@ function connectWs(): void {
 
   ws.onclose = () => {
     connected.value = false
+    clearCreateRetry()
     if (!closedByUser) scheduleReconnect()
   }
 
@@ -381,10 +431,11 @@ function handleWsMessage(data: WsIncoming): void {
       break
 
     case 'message':
+      if (streaming.value) endStream()
       removeTyping()
       addMessage(data.role, data.content, data.phase)
       setPhaseBadge(data.phase || null)
-      setUIState('active')
+      if (uiState.value !== 'done') setUIState('active')
       break
 
     case 'thinking':
@@ -406,6 +457,7 @@ function handleWsMessage(data: WsIncoming): void {
     case 'interview_end':
       stopTtsAudio()
       removeTyping()
+      closedByUser = true
       addMessage('interviewer', data.content)
       setPhaseBadge('done')
       setUIState('done')
@@ -414,6 +466,7 @@ function handleWsMessage(data: WsIncoming): void {
     case 'report':
       stopTtsAudio()
       removeTyping()
+      closedByUser = true
       showReport(data.report)
       setUIState('done')
       break
@@ -431,12 +484,20 @@ function sendCreate(resume: boolean): void {
   if (currentJd) payload.jd = currentJd
   const trySend = () => {
     if (ws && ws.readyState === WebSocket.OPEN) {
+      createRetryTimer = null
       ws.send(JSON.stringify(payload))
     } else {
-      setTimeout(trySend, 150)
+      createRetryTimer = window.setTimeout(trySend, 150)
     }
   }
   trySend()
+}
+
+function clearCreateRetry(): void {
+  if (createRetryTimer !== null) {
+    clearTimeout(createRetryTimer)
+    createRetryTimer = null
+  }
 }
 
 function scheduleReconnect(): void {
@@ -488,42 +549,24 @@ export function startInterview(): void {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  clearInputHint()
+  setPhaseBadge(null)
   if (!connected.value || !ws || ws.readyState !== WebSocket.OPEN) connectWs()
   setUIState('active')
   messages.value = []
   streamId = null
   pendingVoiceMsgId.value = null
+  clearCreateRetry()
   sendCreate(false)
 }
 
 export function backHome(): void {
-  stopTtsAudio()
-  if (recording.value) cancelRecording()
-  closedByUser = true
-  if (reconnectTimer !== null) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  if (ws) {
-    ws.onclose = null
-    try {
-      ws.close()
-    } catch {
-      /* ignore */
-    }
-  }
-  ws = null
-  connected.value = false
-  currentJd = null
-  plan.value = null
-  streamId = null
-  pendingVoiceMsgId.value = null
-  messages.value = []
-  inputText.value = ''
+  resetInterviewState()
   showView('home')
 }
 
 export function sendAnswer(): void {
+  if (uiState.value !== 'active' || streaming.value) return
   const text = inputText.value.trim()
   if (!text || !connected.value || !ws) return
   addMessage('candidate', text)
@@ -535,6 +578,7 @@ export function sendAnswer(): void {
 
 export function endInterview(): void {
   if (!connected.value || !ws) return
+  if (recording.value) cancelRecording()
   stopTtsAudio()
   closedByUser = true
   if (ws.readyState === WebSocket.OPEN) {
@@ -553,56 +597,14 @@ let processorNode: ScriptProcessorNode | null = null
 let pcmChunks: Int16Array[] = []
 let recStartTs = 0
 let recTimer: number | null = null
+let recordingStarting = false
 
 export function toggleRecording(): void {
   if (recording.value) stopRecording()
   else void startRecording()
 }
 
-async function startRecording(): Promise<void> {
-  if (recording.value) return
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showInputHint('当前浏览器不支持录音（需要 HTTPS 或 localhost）', true)
-    return
-  }
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-  } catch {
-    showInputHint('无法访问麦克风，请检查浏览器权限', true)
-    return
-  }
-  const Ctx: typeof AudioContext =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-  try {
-    audioCtx = new Ctx({ sampleRate: 16000 })
-    sourceNode = audioCtx.createMediaStreamSource(mediaStream)
-    processorNode = audioCtx.createScriptProcessor(4096, 1, 1)
-  } catch {
-    if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
-    showInputHint('无法初始化录音，请重试', true)
-    return
-  }
-  pcmChunks = []
-  processorNode.onaudioprocess = (e: AudioProcessingEvent) => {
-    pcmChunks.push(downsample(e.inputBuffer.getChannelData(0), audioCtx ? audioCtx.sampleRate : 44100, 16000))
-  }
-  sourceNode.connect(processorNode)
-  processorNode.connect(audioCtx.destination)
-
-  recording.value = true
-  recStartTs = Date.now()
-  recordingSeconds.value = 0
-  recTimer = window.setInterval(() => {
-    const elapsed = Date.now() - recStartTs
-    recordingSeconds.value = Math.round(elapsed / 1000)
-    showInputHint('正在录音 ' + fmtDur(elapsed / 1000) + '（最长 5 分钟，点 ⏹ 停止）')
-    if (elapsed >= MAX_RECORD_MS) stopRecording()
-  }, 200)
-}
-
-function stopRecording(): void {
-  if (!recording.value) return
+function teardownRecorder(): void {
   if (recTimer !== null) {
     clearInterval(recTimer)
     recTimer = null
@@ -619,6 +621,66 @@ function stopRecording(): void {
     /* ignore */
   }
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
+  audioCtx = null
+  sourceNode = null
+  processorNode = null
+  mediaStream = null
+}
+
+async function startRecording(): Promise<void> {
+  if (recording.value || recordingStarting) return
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showInputHint('当前浏览器不支持录音（需要 HTTPS 或 localhost）', true)
+    return
+  }
+  recordingStarting = true
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch {
+    recordingStarting = false
+    showInputHint('无法访问麦克风，请检查浏览器权限', true)
+    return
+  }
+  const Ctx: typeof AudioContext =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+  try {
+    audioCtx = new Ctx({ sampleRate: 16000 })
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream)
+    processorNode = audioCtx.createScriptProcessor(4096, 1, 1)
+  } catch {
+    try {
+      audioCtx?.close()
+    } catch {
+      /* ignore */
+    }
+    if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
+    audioCtx = null
+    mediaStream = null
+    recordingStarting = false
+    showInputHint('无法初始化录音，请重试', true)
+    return
+  }
+  pcmChunks = []
+  processorNode.onaudioprocess = (e: AudioProcessingEvent) => {
+    pcmChunks.push(downsample(e.inputBuffer.getChannelData(0), audioCtx ? audioCtx.sampleRate : 44100, 16000))
+  }
+  sourceNode.connect(processorNode)
+  processorNode.connect(audioCtx.destination)
+
+  recordingStarting = false
+  recording.value = true
+  recStartTs = Date.now()
+  recTimer = window.setInterval(() => {
+    const elapsed = Date.now() - recStartTs
+    showInputHint('正在录音 ' + fmtDur(elapsed / 1000) + '（最长 5 分钟，点 ⏹ 停止）')
+    if (elapsed >= MAX_RECORD_MS) stopRecording()
+  }, 200)
+}
+
+function stopRecording(): void {
+  if (!recording.value) return
+  teardownRecorder()
   recording.value = false
   clearInputHint()
 
@@ -662,34 +724,30 @@ function stopRecording(): void {
       )
     } else {
       showInputHint('连接已断开，语音未发送', true)
-      pendingVoiceMsgId.value = null
+      failVoiceMessage('发送失败')
     }
   }
   reader.onerror = () => {
     showInputHint('读取音频失败', true)
-    pendingVoiceMsgId.value = null
+    failVoiceMessage('发送失败')
   }
   reader.readAsDataURL(wavBlob)
 }
 
+function failVoiceMessage(status: string): void {
+  const id = pendingVoiceMsgId.value
+  pendingVoiceMsgId.value = null
+  if (id === null) return
+  const msg = messages.value.find((m) => m.id === id)
+  if (msg) {
+    msg.pending = false
+    msg.status = status
+  }
+}
+
 export function cancelRecording(): void {
   if (!recording.value) return
-  if (recTimer !== null) {
-    clearInterval(recTimer)
-    recTimer = null
-  }
-  try {
-    processorNode?.disconnect()
-    sourceNode?.disconnect()
-  } catch {
-    /* ignore */
-  }
-  try {
-    audioCtx?.close()
-  } catch {
-    /* ignore */
-  }
-  if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
+  teardownRecorder()
   recording.value = false
   pcmChunks = []
   clearInputHint()
@@ -702,6 +760,7 @@ function handleCandidateVoice(data: CandidateVoiceData): void {
   const msg = messages.value.find((m) => m.id === id)
   if (!msg) return
   if (data.error) {
+    msg.pending = false
     msg.status = data.error
     return
   }

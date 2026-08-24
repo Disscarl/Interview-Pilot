@@ -2,6 +2,7 @@
 import { ref, onBeforeUnmount } from 'vue'
 import type { ChatMessage } from '../types'
 import { getToken } from '../api'
+import { playVoiceUrl } from '../store'
 import { fmtDur } from '../utils'
 
 const props = defineProps<{ message: ChatMessage }>()
@@ -40,7 +41,8 @@ function togglePlay(): void {
     src.startsWith('blob:') || src.startsWith('data:')
       ? src
       : src + (src.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(getToken())
-  const a = new Audio(url)
+  const a = playVoiceUrl(url)
+  if (!a) return
   a.addEventListener('timeupdate', () => {
     if (a.duration) progress.value = (a.currentTime / a.duration) * 100
   })

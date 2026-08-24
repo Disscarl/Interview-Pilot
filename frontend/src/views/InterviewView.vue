@@ -43,6 +43,20 @@ function onInput(): void {
   el.style.height = 'auto'
   el.style.height = Math.min(el.scrollHeight, 120) + 'px'
 }
+
+function onEnter(e: KeyboardEvent): void {
+  // Ignore IME composition confirmations (Chinese input) — don't send half-typed text.
+  if (e.isComposing || e.keyCode === 229) return
+  sendAnswer()
+}
+
+watch(inputText, () => {
+  // Shrink the textarea back after the text is cleared programmatically.
+  const el = textareaEl.value
+  if (el && !inputText.value) {
+    el.style.height = 'auto'
+  }
+})
 </script>
 
 <template>
@@ -80,7 +94,7 @@ function onInput(): void {
           placeholder="输入你的回答..."
           :disabled="inputDisabled()"
           @input="onInput"
-          @keydown.enter.exact.prevent="sendAnswer()"
+          @keydown.enter.exact.prevent="onEnter"
         ></textarea>
         <button class="send-btn" :disabled="sendDisabled()" @click="sendAnswer()">发送</button>
         <button class="secondary" :disabled="endDisabled()" @click="endInterview()">结束</button>
