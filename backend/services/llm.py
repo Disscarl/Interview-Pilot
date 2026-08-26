@@ -3,13 +3,50 @@
 Model selection is lazy: importing this module never raises, even when no
 API key is configured. The RuntimeError only surfaces when an LLM instance
 is actually created without any key.
+
+Every created instance carries a lightweight callback that logs prompt
+summary + token usage to the local logger (cheap observability without
+LangSmith).
 """
-from config import settings
+import logging
+
+from config import settings, logger
+from langchain_core.callbacks import BaseCallbackHandler
 
 # Priority: Anthropic → OpenAI → DeepSeek
 ANTHROPIC_KEY = settings.anthropic_api_key
 OPENAI_KEY = settings.openai_api_key
 DEEPSEEK_KEY = settings.deepseek_api_key
+
+
+class _CallLogger(BaseCallbackHandler):
+    """Logs each LLM call (prompt summary) and its token usage."""
+
+    def __init__(self, log: logging.Logger):
+        self._log = log
+
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        try:
+            if prompts:
+                first = prompts[0]
+                if not isinstance(first, str):
+                    first = str(first)
+                summary = " ".join(first.split())[:120]
+                self._log.info("LLM call: %s…", summary)
+        except Exception:
+            pass
+
+    def on_llm_end(self, response, **kwargs):
+        try:
+            llm_output = getattr(response, "llm_output", None) or {}
+            usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
+            total = usage.get("total_tokens") or usage.get("total_tokens", "?")
+            self._log.info("LLM done: tokens=%s", total)
+        except Exception:
+            pass
+
+
+_CALL_LOGGER = _CallLogger(logger)
 
 
 def _select_model():
@@ -57,5 +94,10 @@ def create_llm(temperature: float = 0.7, max_tokens: int = 1024, **kwargs):
 
 
 def get_default_llm():
-    """Get a default LLM instance."""
-    return create_llm()
+    """Get a default LLM instance (with local call logging attached)."""
+    llm = create_llm()
+    try:
+        llm.callbacks = [_CALL_LOGGER]
+    except Exception:
+        pass
+    return llm

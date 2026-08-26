@@ -131,6 +131,17 @@ python -m unittest discover -s tests -t . -v
 
 CI（GitHub Actions）会运行后端测试 + 前端 `npm run build` / `npm run typecheck`。
 
+## 评测（LLM-as-judge）
+
+```bash
+cd backend
+python evals/eval_interviewer.py   # 需配置 LLM key
+```
+
+输出三项指标：**追问相关性**（1-5 平均分）、**回答评分稳定性**（同一回答多次评分的最大差值）、**报告字段完整性**（必填字段/分数范围/摘要）。评估与评分使用 `with_structured_output`（Pydantic schema，DeepSeek 走 function calling），不再依赖手写 JSON 解析。
+
+每次 LLM 调用会在后端日志打印 prompt 摘要与 token 数（本地可观测，无需 LangSmith）。
+
 ## 已知限制
 
 - 会话状态在内存（单进程），重启即丢；需 `--workers 1`。

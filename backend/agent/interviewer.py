@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from models.interview import InterviewState, InterviewPhase
+from models.schemas import AnswerScore, EvaluationReport
 from services.llm import get_default_llm
 from agent.prompts import SYSTEM_PROMPT
 
@@ -65,6 +66,19 @@ class InterviewerAgent:
 
     def __init__(self, llm=None):
         self.llm = llm or get_default_llm()
+        self._structured_scorer = None  # lazily-built structured-output wrapper (or False)
+
+    def _scorer_runnable(self):
+        """Return a `with_structured_output` scorer wrapper, or None if unsupported."""
+        if self._structured_scorer is None:
+            try:
+                self._structured_scorer = self.llm.with_structured_output(
+                    AnswerScore, method="function_calling"
+                )
+            except Exception as e:
+                logger.warning("Structured scoring unavailable, using fallback parsing: %s", e)
+                self._structured_scorer = False
+        return self._structured_scorer or None
 
     def _get_phase_config(self, phase: InterviewPhase) -> dict:
         return PHASE_CONFIG.get(phase, PHASE_CONFIG[InterviewPhase.INTRO])
@@ -207,12 +221,21 @@ class InterviewerAgent:
             return None
         try:
             from agent.prompts import ANSWER_SCORER_PROMPT
-            resp = await self.llm.ainvoke(
-                ANSWER_SCORER_PROMPT.format_messages(
-                    role=state.role_title or state.scenario_id,
-                    answer=answer[:2000],
-                )
+            messages = ANSWER_SCORER_PROMPT.format_messages(
+                role=state.role_title or state.scenario_id,
+                answer=answer[:2000],
             )
+            scorer = self._scorer_runnable()
+            if scorer is not None:
+                try:
+                    res = await scorer.ainvoke(messages)
+                    return {
+                        "score": max(1, min(5, int(res.score))),
+                        "weakness_hint": str(res.weakness_hint or "")[:50],
+                    }
+                except Exception as e:
+                    logger.warning("Structured scoring failed, falling back: %s", e)
+            resp = await self.llm.ainvoke(messages)
             content = str(resp.content or "").strip()
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
@@ -288,6 +311,20 @@ class EvaluatorAgent:
 
     def __init__(self, llm=None):
         self.llm = llm or get_default_llm()
+        self._structured = None  # lazily-built structured-output wrapper (or False)
+
+    def _structured_evaluator(self):
+        """Return a `with_structured_output` wrapper, or None if unsupported."""
+        if self._structured is None:
+            try:
+                # DeepSeek lacks json_schema response_format; function calling works.
+                self._structured = self.llm.with_structured_output(
+                    EvaluationReport, method="function_calling"
+                )
+            except Exception as e:
+                logger.warning("Structured output unavailable, using fallback parsing: %s", e)
+                self._structured = False
+        return self._structured or None
 
     async def evaluate(self, state: InterviewState) -> dict:
         """Generate an evaluation report from the interview transcript."""
@@ -295,14 +332,23 @@ class EvaluatorAgent:
 
         transcript = _limit_transcript(state.get_transcript())
 
+        structured = self._structured_evaluator()
+        if structured is not None:
+            try:
+                report = await structured.ainvoke(
+                    EVALUATOR_PROMPT.format_messages(transcript=transcript)
+                )
+                return report.to_dict() if hasattr(report, "to_dict") else report
+            except Exception as e:
+                logger.warning("Structured evaluation failed, falling back: %s", e)
+
         response = await self.llm.ainvoke(
             EVALUATOR_PROMPT.format_messages(transcript=transcript)
         )
         content = response.content
 
-        # Parse JSON from the response
+        # Fallback: parse JSON from the response (with markdown-code-fence handling).
         try:
-            # Handle markdown code blocks
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
