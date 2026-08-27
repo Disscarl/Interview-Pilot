@@ -21,8 +21,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from config import settings, logger
-from models.interview import InterviewPhase
 from agent.interviewer import InterviewerAgent, EvaluatorAgent
+from agent.graph import build_interview_step_graph
 from services.session import session_manager
 from services.jd import analyze_jd, analyze_candidate
 from services.resume import extract_text
@@ -101,15 +101,6 @@ _MAX_AUDIO_BYTES = 15 * 1024 * 1024
 _MAX_ANSWER_TEXT = 5000
 _MAX_SETUP_BYTES = 128 * 1024
 
-_FALLBACK_REPORT = {
-    "overall_score": 0,
-    "summary": "评估生成失败，请查看对话记录。",
-    "dimension_scores": {},
-    "highlights": [],
-    "weak_points": [],
-    "recommended_topics": [],
-}
-
 
 def _enforce_rate_limit(bucket: str, user_id: int) -> None:
     if not rate_limiter.allow(f"{bucket}:{user_id}", _RATE_LIMITS[bucket]):
@@ -123,37 +114,6 @@ _AUTH_IP_LIMIT = 10
 def _enforce_ip_rate_limit(ip: str) -> None:
     if not rate_limiter.allow(f"auth_ip:{ip}", _AUTH_IP_LIMIT):
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
-
-
-async def send_streamed(ws: WebSocket, state):
-    """Stream the interviewer's next message token-by-token to the client."""
-    await ws.send_text(json.dumps({"type": "thinking", "content": True}))
-    async for token in interviewer.generate_next_stream(state):
-        await ws.send_text(json.dumps({"type": "stream_token", "content": token}))
-    await ws.send_text(json.dumps({"type": "stream_end", "phase": state.phase.value}))
-
-
-async def after_candidate_answer(ws: WebSocket, state) -> bool:
-    """After a candidate answer: end + evaluate, or stream the next message.
-
-    Returns True when the interview ended (caller should break the loop).
-    """
-    if state.phase == InterviewPhase.CLOSING and interviewer.should_transition(state):
-        state.phase = InterviewPhase.EVALUATE
-        await ws.send_text(json.dumps({
-            "type": "interview_end",
-            "content": "面试结束，正在生成评估报告...",
-        }))
-        report = None
-        try:
-            report = await evaluator.evaluate(state)
-        except Exception as e:
-            logger.error("Evaluation failed: %s", e)
-        await save_history(state, report)
-        await ws.send_text(json.dumps({"type": "report", "report": report or _FALLBACK_REPORT}))
-        return True
-    await send_streamed(ws, state)
-    return False
 
 
 async def save_history(state, report):
@@ -469,6 +429,9 @@ async def websocket_interview(ws: WebSocket, session_id: str):
     await ws.accept()
     logger.info("WebSocket connected: %s (user %s)", session_id, user_id)
 
+    # One compiled LangGraph step per connection (streams through this WS).
+    step_graph = build_interview_step_graph(interviewer, evaluator, ws=ws, save_history=save_history)
+
     ended = False
     try:
         # First message: setup (scenario selection or create new)
@@ -528,8 +491,8 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     "session_id": session_id,
                     "scenario_id": scenario_id,
                 }))
-                # Generate and stream the interviewer's first message
-                await send_streamed(ws, state)
+                # Generate and stream the interviewer's first message (graph step).
+                await step_graph.ainvoke({"interview": state})
         else:
             await ws.send_text(json.dumps({"type": "error", "content": "First message must be 'create'"}))
             return
@@ -553,7 +516,8 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     }))
                     continue
                 state.add_message("candidate", candidate_text)
-                if await after_candidate_answer(ws, state):
+                result = await step_graph.ainvoke({"interview": state})
+                if result.get("ended"):
                     ended = True
                     break
 
@@ -616,26 +580,17 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     "type": "candidate_voice", "message_id": message_id,
                     "text": text, "audio_url": audio_url, "audio_duration": duration_sec,
                 }))
-                if await after_candidate_answer(ws, state):
+                result = await step_graph.ainvoke({"interview": state})
+                if result.get("ended"):
                     ended = True
                     break
 
             elif action == "end":
-                state.phase = InterviewPhase.EVALUATE
-                await ws.send_text(json.dumps({
-                    "type": "interview_end",
-                    "content": "面试已结束，正在生成评估报告...",
-                }))
-                report = None
-                try:
-                    report = await evaluator.evaluate(state)
-                except Exception as e:
-                    logger.error("Evaluation failed: %s", e)
-                await save_history(state, report)
-                await ws.send_text(json.dumps({
-                    "type": "report",
-                    "report": report or _FALLBACK_REPORT,
-                }))
+                await step_graph.ainvoke({
+                    "interview": state,
+                    "force_evaluate": True,
+                    "end_content": "面试已结束，正在生成评估报告...",
+                })
                 ended = True
                 break
 

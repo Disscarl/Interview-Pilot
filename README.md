@@ -19,6 +19,7 @@
 
 - **后端**：FastAPI + WebSocket + Uvicorn（单进程 `--workers 1`）
 - **LLM 应用**：LangChain + DeepSeek（`langchain-openai`，OpenAI 兼容接口；也兼容 Anthropic/OpenAI key）
+- **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）
 - **语音**：讯飞开放平台（STT 语音听写 + TTS 超拟人语音合成）
 - **存储**：SQLite（`aiosqlite`），音频文件落盘，TTS 结果磁盘缓存
 - **前端**：Vue 3 + Vite + TypeScript（组件化，见 `frontend/src/`）
@@ -95,7 +96,8 @@ interview-pilot/
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── agent/
-│   │   ├── interviewer.py   # 面试官 LLM 链 + 评估
+│   │   ├── interviewer.py   # 面试官 LLM 链 + 评估（结构化输出）
+│   │   ├── graph.py         # LangGraph 面试步骤状态图（评分→路由→出题/评估）
 │   │   └── prompts.py       # Prompt 模板
 │   ├── models/
 │   │   └── interview.py     # 面试状态模型

@@ -286,11 +286,21 @@ class InterviewerAgent:
         return content
 
     async def generate_next_stream(self, state: InterviewState) -> AsyncGenerator[str, None]:
-        """Stream the interviewer's next message token by token."""
+        """Score the last answer, then stream the next message (convenience wrapper)."""
+        score_info = await self._score_last_answer(state)
+        async for token in self.stream_next(state, score_info):
+            yield token
+
+    async def stream_next(self, state: InterviewState, score_info: dict | None = None) -> AsyncGenerator[str, None]:
+        """Stream the interviewer's next message using a precomputed answer score.
+
+        Used by the LangGraph step (the graph scores in a separate node, then
+        calls this to generate). Advances the phase first, exactly like the
+        old generate_next_stream did.
+        """
         if self.should_transition(state):
             state.phase = self._next_phase(state.phase)
 
-        score_info = await self._score_last_answer(state)
         messages = self._build_history(state, score_info)
         candidate_answer = state.get_last_answer() or "（面试开始，请面试官先发言）"
 
