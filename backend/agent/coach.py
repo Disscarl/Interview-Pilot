@@ -52,17 +52,24 @@ class CoachAgent:
         if structured is not None:
             try:
                 res = await structured.ainvoke(messages)
-                return res.model_dump()
+                data = res.model_dump() if hasattr(res, "model_dump") else res
+                if isinstance(data, dict):
+                    return data
+                logger.warning("Structured coach returned non-dict: %s", type(data).__name__)
             except Exception as e:
                 logger.warning("Structured coach generation failed, falling back: %s", e)
 
         resp = await self.llm.ainvoke(messages)
-        content = str(resp.content or "")
+        content = str(getattr(resp, "content", None) or "")
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
         try:
-            return json.loads(content)
-        except Exception:
-            return EMPTY_COACH
+            data = json.loads(content)
+            if isinstance(data, dict):
+                return data
+            logger.warning("Coach JSON was not an object: %s", type(data).__name__)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return EMPTY_COACH

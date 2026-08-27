@@ -81,7 +81,7 @@ def build_interview_step_graph(interviewer, evaluator, ws, save_history):
         try:
             report = await evaluator.evaluate(interview)
         except Exception as e:
-            logger.error("Evaluation failed: %s", e)
+            logger.error("Evaluation failed: %s", e, exc_info=True)
         await save_history(interview, report)
         await ws.send_text(json.dumps({
             "type": "report",

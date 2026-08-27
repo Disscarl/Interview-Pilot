@@ -398,14 +398,17 @@ class EvaluatorAgent:
                 report = await structured.ainvoke(
                     EVALUATOR_PROMPT.format_messages(transcript=transcript)
                 )
-                return report.to_dict() if hasattr(report, "to_dict") else report
+                data = report.to_dict() if hasattr(report, "to_dict") else report
+                if isinstance(data, dict):
+                    return data
+                logger.warning("Structured evaluation returned non-dict: %s", type(data).__name__)
             except Exception as e:
                 logger.warning("Structured evaluation failed, falling back: %s", e)
 
         response = await self.llm.ainvoke(
             EVALUATOR_PROMPT.format_messages(transcript=transcript)
         )
-        content = response.content
+        content = str(getattr(response, "content", None) or "")
 
         # Fallback: parse JSON from the response (with markdown-code-fence handling).
         try:
@@ -413,13 +416,17 @@ class EvaluatorAgent:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            return json.loads(content)
-        except json.JSONDecodeError:
-            return {
-                "overall_score": 0,
-                "dimension_scores": {},
-                "highlights": [],
-                "weak_points": [],
-                "recommended_topics": [],
-                "summary": f"评估解析失败，原始输出: {content[:500]}"
-            }
+            data = json.loads(content)
+            if isinstance(data, dict):
+                return data
+            logger.warning("Evaluation JSON was not an object: %s", type(data).__name__)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return {
+            "overall_score": 0,
+            "dimension_scores": {},
+            "highlights": [],
+            "weak_points": [],
+            "recommended_topics": [],
+            "summary": f"评估解析失败，原始输出: {content[:500]}",
+        }
