@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -28,7 +28,11 @@
     font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
     background: var(--bg);
     color: var(--text);
-    height: 100vh;
+    /* 整体等比放大（等同浏览器 150% 缩放）；改这个值可整体调整大小 */
+    width: calc(100vw / 1.5);
+    height: calc(100vh / 1.5);
+    transform: scale(1.5);
+    transform-origin: top left;
     display: flex;
     flex-direction: column;
     overflow: hidden;

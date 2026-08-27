@@ -10,6 +10,8 @@
   --bubble-you: #27272c;
   --border: #2b2b30;
   --radius: 12px;
+  /* 整体界面缩放：1.5 ≈ 浏览器 150%（更大更舒适）。调整这个值即可整体放大/缩小。 */
+  --ui-scale: 1.5;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -20,6 +22,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -30,8 +33,14 @@ body {
   scrollbar-color: #333 transparent;
 }
 
+/* 用 transform 等比放大整个应用（等价浏览器缩放 150%）：
+   容器按 1/缩放比 反算尺寸后再整体放大，正好铺满视口、无滚动条，
+   固定元素（FAB/弹窗遮罩）随容器定位，行为与浏览器缩放一致。 */
 #app {
-  height: 100vh;
+  width: calc(100vw / var(--ui-scale));
+  height: calc(100vh / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
   display: flex;
   flex-direction: column;
   overflow: hidden;
