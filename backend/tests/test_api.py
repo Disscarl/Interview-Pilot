@@ -107,6 +107,66 @@ class ApiTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["groups"], [])
 
+    def test_coach_endpoint_generate_and_cache(self):
+        import asyncio
+
+        from services.auth import decode_token
+        from services.history import save_interview
+
+        class FakeCoach:
+            def __init__(self):
+                self.calls = 0
+
+            async def generate(self, transcript, report):
+                self.calls += 1
+                return {
+                    "summary": "表现不错",
+                    "weak_analysis": ["深度不足"],
+                    "study_plan": [{"action": "复习系统设计", "why": "薄弱"}],
+                    "next_focus": ["系统设计"],
+                    "next_first_question": "讲讲你的系统设计思路",
+                }
+
+        c = self.client
+        # unauthenticated → 401
+        self.assertEqual(c.post("/api/history/x/coach").status_code, 401)
+
+        token = self._register("coach_user")
+        auth = {"Authorization": f"Bearer {token}"}
+        user_id = decode_token(token)
+
+        async def seed():
+            await save_interview(
+                "sess_coach", "UE开发", "某公司",
+                [{"role": "interviewer", "content": "你好", "phase": "intro"}],
+                {"overall_score": 3.0},
+                user_id,
+                jd={"profile": {"role_title": "UE开发"}},
+            )
+
+        asyncio.run(seed())
+
+        # missing record → 404
+        fake = FakeCoach()
+        with patch.object(main, "coach", fake):
+            self.assertEqual(c.post("/api/history/nope/coach", headers=auth).status_code, 404)
+            r = c.post("/api/history/sess_coach/coach", headers=auth)
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.json()["coach"]["summary"], "表现不错")
+            # second call is served from the cache (no extra LLM call)
+            r2 = c.post("/api/history/sess_coach/coach", headers=auth)
+            self.assertEqual(r2.json()["coach"]["next_first_question"], "讲讲你的系统设计思路")
+        self.assertEqual(fake.calls, 1)
+
+        # another user cannot generate for someone else's record
+        token_b = self._register("coach_user2")
+        with patch.object(main, "coach", FakeCoach()):
+            rb = c.post(
+                "/api/history/sess_coach/coach",
+                headers={"Authorization": f"Bearer {token_b}"},
+            )
+        self.assertEqual(rb.status_code, 404)
+
 
 if __name__ == "__main__":
     import unittest

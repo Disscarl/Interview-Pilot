@@ -21,14 +21,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from config import settings, logger
-from agent.interviewer import InterviewerAgent, EvaluatorAgent
+from agent.interviewer import InterviewerAgent, EvaluatorAgent, _limit_transcript
+from agent.coach import CoachAgent
 from agent.graph import build_interview_step_graph
 from services.session import session_manager
 from services.jd import analyze_jd, analyze_candidate
 from services.resume import extract_text
 from services.history import (
     init_db, save_interview, list_interviews, get_interview, delete_interview,
-    list_all_session_ids, list_progress, create_user, get_user_by_username, get_user_by_id,
+    list_all_session_ids, list_progress, save_coach, create_user, get_user_by_username, get_user_by_id,
 )
 from services.tts import synthesize_cached
 from services.asr import transcribe_wav, AsrNotConfigured
@@ -36,9 +37,10 @@ from services.auth import hash_password, verify_password, create_token, decode_t
 from services.ratelimit import rate_limiter
 
 
-# Global interviewer/evaluator (created once at startup)
+# Global interviewer/evaluator/coach (created once at startup)
 interviewer = InterviewerAgent()
 evaluator = EvaluatorAgent()
+coach = CoachAgent()
 
 
 # ─── Access-log token redaction ───────────────────────────
@@ -89,7 +91,7 @@ def _user_id_from_token(token: str) -> int | None:
 # ─── Rate limiting + input caps ──────────────────────────
 
 # per-user calls allowed per 60s window
-_RATE_LIMITS = {"jd": 10, "tts": 30, "resume": 30, "stt": 20}
+_RATE_LIMITS = {"jd": 10, "tts": 30, "resume": 30, "stt": 20, "coach": 10}
 
 # input length/size caps
 _MAX_JD_TEXT = 20000
@@ -372,6 +374,28 @@ async def delete_history(interview_id: str, user: dict = Depends(get_current_use
     if deleted:
         _delete_audio_dir(interview_id)
     return {"ok": True}
+
+
+@app.post("/api/history/{interview_id}/coach")
+async def generate_coach(interview_id: str, user: dict = Depends(get_current_user)):
+    """Generate (or return the cached) coach debrief for a history record."""
+    _enforce_rate_limit("coach", user["id"])
+    rec = await get_interview(interview_id, user["id"])
+    if not rec:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if rec.get("coach"):
+        return {"coach": rec["coach"]}
+
+    # Transcript in the same format the evaluator uses, size-capped.
+    transcript = "\n\n".join(
+        f"{'🤖 面试官' if m['role'] == 'interviewer' else '👤 候选者'} "
+        f"[{m.get('phase', '')}]: {m['content']}"
+        for m in rec.get("messages") or []
+    )
+    transcript = _limit_transcript(transcript)
+    coach_report = await coach.generate(transcript, rec.get("report") or {})
+    await save_coach(interview_id, user["id"], coach_report)
+    return {"coach": coach_report}
 
 
 # ─── Voice answer audio ───────────────────────────────────

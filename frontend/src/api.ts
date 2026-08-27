@@ -1,6 +1,6 @@
 // HTTP client with JWT bearer auth + typed endpoint helpers.
 import { ref } from 'vue'
-import type { HistoryRecord, JdAnalysis, ProgressGroup } from './types'
+import type { CoachReport, HistoryRecord, JdAnalysis, ProgressGroup } from './types'
 
 export const authToken = ref<string>(localStorage.getItem('auth_token') || '')
 
@@ -128,4 +128,13 @@ export async function deleteHistory(id: string): Promise<void> {
     const data = (await resp.json().catch(() => ({}))) as ErrorBody
     throw new Error(errMessage(resp, data, '删除失败'))
   }
+}
+
+export async function generateCoach(id: string): Promise<CoachReport> {
+  const resp = await apiFetch('/api/history/' + encodeURIComponent(id) + '/coach', {
+    method: 'POST',
+  })
+  const data = (await resp.json()) as { coach?: CoachReport } & ErrorBody
+  if (!resp.ok) throw new Error(errMessage(resp, data, '生成失败'))
+  return data.coach || {}
 }

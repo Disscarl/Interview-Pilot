@@ -89,6 +89,28 @@ EVALUATOR_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
+# Prompt for the coach agent (post-interview debrief → study plan → next focus)
+COACH_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """你是一位求职教练。根据下面这场面试的对话记录与评估报告，为候选人做一次「教练复盘」，输出一个 JSON 对象（不要任何其他文字）：
+{{
+    "summary": "一句话总结本轮表现",
+    "weak_analysis": ["薄弱点分析（落到具体行为，2-4 条）"],
+    "study_plan": [
+        {{"action": "一条具体可执行的学习动作", "why": "为什么针对这个薄弱点"}}
+    ],
+    "next_focus": ["下次面试应重点考查的方向，1-3 条"],
+    "next_first_question": "下次面试的首问（一句针对性问题，直接考查最需改进的薄弱点）"
+}}
+
+要求：
+- 复盘要基于事实（报告里的薄弱点 + 对话中的具体表现），不空泛、不说教。
+- study_plan 给出 3-5 条能在 1-2 周内完成的具体动作。
+- next_first_question 必须能衔接薄弱点，让下一次面试一开始就针对性考查。
+"""),
+    ("human", "评估报告：\n{report_json}\n\n对话记录：\n{transcript}"),
+])
+
+
 # ─── JD parsing & interview planning prompts ─────────────────
 
 JD_PROFILE_PROMPT = ChatPromptTemplate.from_messages([

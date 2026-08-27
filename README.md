@@ -12,6 +12,7 @@
 - **语音输入（STT）**：讯飞语音听写，最长 5 分钟录音，服务端自动切分转写，微信式语音条 + 「转文字」。
 - **语音播报（TTS）**：讯飞超拟人音色，音色/语速可选、手动点播、试听；自动过滤 `（笑）（停顿）` 等语气词。
 - **评估报告**：多维度评分（进度条 + 雷达图）+ 亮点/薄弱点/学习建议。
+- **教练复盘（多 Agent）**：面试官 / 评估官 / 教练三个角色在 LangGraph 上协作——历史详情页可一键生成教练复盘（薄弱点分析 → 学习计划 → 下次面试针对性首问）。
 - **历史记录**：面试记录持久化（按用户隔离），可回放对话、查看报告、回放语音回答。
 - **进步趋势**：历史页按「岗位+公司」分组，展示多轮面试的总分趋势折线与最新一轮维度雷达图。
 - **用户系统**：注册/登录（PBKDF2 密码哈希 + HS256 JWT），历史/音频/会话均按用户隔离。
@@ -20,7 +21,7 @@
 
 - **后端**：FastAPI + WebSocket + Uvicorn（单进程 `--workers 1`）
 - **LLM 应用**：LangChain + DeepSeek（`langchain-openai`，OpenAI 兼容接口；也兼容 Anthropic/OpenAI key）
-- **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）+ `bind_tools` 工具调用闭环
+- **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）+ `bind_tools` 工具调用闭环 + 多 Agent（面试官/评估官/教练）
 - **语音**：讯飞开放平台（STT 语音听写 + TTS 超拟人语音合成）
 - **存储**：SQLite（`aiosqlite`），音频文件落盘，TTS 结果磁盘缓存
 - **前端**：Vue 3 + Vite + TypeScript（组件化，见 `frontend/src/`）

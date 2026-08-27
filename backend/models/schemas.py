@@ -36,3 +36,20 @@ class EvaluationReport(BaseModel):
 
     def to_dict(self) -> dict:
         return self.model_dump()
+
+
+class CoachStudyAction(BaseModel):
+    """One concrete learning action suggested by the coach."""
+
+    action: str = Field(default="", description="一条具体可执行的学习动作")
+    why: str = Field(default="", description="为什么针对这个薄弱点")
+
+
+class CoachReport(BaseModel):
+    """Post-interview coach debrief (weak points -> study plan -> next focus)."""
+
+    summary: str = Field(default="", description="一句话总结本轮表现")
+    weak_analysis: list[str] = Field(default_factory=list, description="薄弱点分析（具体行为层面）")
+    study_plan: list[CoachStudyAction] = Field(default_factory=list, description="学习计划 3-5 条")
+    next_focus: list[str] = Field(default_factory=list, description="下次面试应重点考查的方向")
+    next_first_question: str = Field(default="", description="下次面试的首问（针对性考查薄弱点）")

@@ -100,6 +100,19 @@ export interface HistoryItem {
   created_at?: string
 }
 
+export interface CoachStudyAction {
+  action?: string
+  why?: string
+}
+
+export interface CoachReport {
+  summary?: string
+  weak_analysis?: string[]
+  study_plan?: CoachStudyAction[]
+  next_focus?: string[]
+  next_first_question?: string
+}
+
 export interface HistoryRecord {
   id: string
   role_title?: string
@@ -110,6 +123,8 @@ export interface HistoryRecord {
   messages?: TranscriptMessage[]
   /** The {profile, plan, candidate} payload used to run this interview (for re-interview). */
   jd?: JdAnalysis | null
+  /** Generated coach debrief (may be null until requested). */
+  coach?: CoachReport | null
 }
 
 export interface ProgressAttempt {

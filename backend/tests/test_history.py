@@ -6,6 +6,7 @@ from unittest import IsolatedAsyncioTestCase
 from services.history import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     save_interview, list_interviews, get_interview, delete_interview, list_progress,
+    save_coach,
 )
 from services.auth import hash_password
 
@@ -75,6 +76,21 @@ class HistoryTest(IsolatedAsyncioTestCase):
         await save_interview("sess_legacy", "岗位", "公司", [], {"overall_score": 3.0}, a)
         rec = await get_interview("sess_legacy", a)
         self.assertIsNone(rec["jd"])
+
+    async def test_save_and_get_coach(self):
+        a = await create_user("coachh", "h")
+        await save_interview("sess_c", "岗位", "公司", [], {"overall_score": 3.0}, a)
+        # not yet generated → None
+        self.assertIsNone((await get_interview("sess_c", a))["coach"])
+
+        ok = await save_coach("sess_c", a, {"summary": "复盘", "study_plan": []})
+        self.assertTrue(ok)
+        rec = await get_interview("sess_c", a)
+        self.assertEqual(rec["coach"]["summary"], "复盘")
+
+        # unowned record not writable
+        b = await create_user("coachh2", "h")
+        self.assertFalse(await save_coach("sess_c", b, {"summary": "x"}))
 
     async def test_list_progress_groups(self):
         a = await create_user("prog", "h")

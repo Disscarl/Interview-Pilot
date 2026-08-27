@@ -36,7 +36,8 @@ async def init_db(path: str):
                 summary TEXT,
                 messages TEXT,
                 report TEXT,
-                jd TEXT
+                jd TEXT,
+                coach TEXT
             )
         """)
         # Migrate pre-auth databases: add the user_id column if missing.
@@ -47,6 +48,9 @@ async def init_db(path: str):
         # Migrate older rows: add the jd column if missing (keeps re-interview data).
         if "jd" not in columns:
             await db.execute("ALTER TABLE interviews ADD COLUMN jd TEXT")
+        # Migrate older rows: add the coach column if missing (coach debrief).
+        if "coach" not in columns:
+            await db.execute("ALTER TABLE interviews ADD COLUMN coach TEXT")
 
         # One-time migration: assign pre-auth orphan rows (user_id IS NULL) to
         # the reserved legacy owner account so they stay visible.
@@ -159,7 +163,19 @@ async def get_interview(interview_id: str, user_id: int) -> dict | None:
     d["messages"] = json.loads(d["messages"]) if d["messages"] else []
     d["report"] = json.loads(d["report"]) if d["report"] else {}
     d["jd"] = json.loads(d["jd"]) if d["jd"] else None
+    d["coach"] = json.loads(d["coach"]) if d["coach"] else None
     return d
+
+
+async def save_coach(interview_id: str, user_id: int, coach: dict) -> bool:
+    """Persist a generated coach debrief onto an owned history record."""
+    async with aiosqlite.connect(_DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE interviews SET coach = ? WHERE id = ? AND user_id = ?",
+            (json.dumps(coach, ensure_ascii=False), interview_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def delete_interview(interview_id: str, user_id: int) -> bool:

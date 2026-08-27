@@ -856,6 +856,22 @@ export async function reInterview(id: string): Promise<void> {
   startInterview()
 }
 
+// ── Coach（教练复盘） ──────────────────────────────────────
+export const coachLoading = ref(false)
+
+/** 为当前详情记录生成（或读取缓存的）教练复盘。 */
+export async function generateCoach(id: string): Promise<void> {
+  if (!historyDetail.value || historyDetail.value.id !== id) return
+  coachLoading.value = true
+  try {
+    historyDetail.value.coach = await api.generateCoach(id)
+  } catch (e) {
+    historyError.value = e instanceof Error ? e.message : '生成失败'
+  } finally {
+    coachLoading.value = false
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
