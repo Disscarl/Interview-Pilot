@@ -53,6 +53,12 @@ const latestDims = computed<Record<string, number>>(() => {
   return out
 })
 
+// 趋势线需要 ≥2 次才有对比意义；雷达图（最新一轮维度）第一次面试即可展示。
+const showTrend = computed(() => attemptsDesc.value.length >= 2)
+const showAggregate = computed(
+  () => showTrend.value || Object.keys(latestDims.value).length >= 3,
+)
+
 function scoreText(score: number | null | undefined): string {
   return score != null ? score.toFixed(1) : '—'
 }
@@ -80,9 +86,9 @@ function scoreText(score: number | null | undefined): string {
       </div>
     </div>
 
-    <!-- 趋势概览：多轮才对比 -->
-    <div v-if="attemptsDesc.length >= 2" class="pc-body">
-      <div class="pc-chart">
+    <!-- 概览：雷达图（≥1 次即显示）；趋势线需 ≥2 次才有对比意义 -->
+    <div v-if="showAggregate" class="pc-body">
+      <div v-if="showTrend" class="pc-chart">
         <div class="pc-label">总分趋势（/5）</div>
         <svg :viewBox="`0 0 ${W} ${H}`" class="sparkline">
           <polyline :points="linePoints" class="spark-line" />
