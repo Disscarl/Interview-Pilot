@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import {
   logout,
   resumeName,
@@ -17,6 +17,7 @@ import {
 import VoiceSettings from '../components/VoiceSettings.vue'
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const planEl = ref<HTMLElement | null>(null)
 
 function pickFile(): void {
   fileInput.value?.click()
@@ -28,6 +29,15 @@ function onFileChange(e: Event): void {
   if (file) void uploadResume(file)
   input.value = ''
 }
+
+// 面试计划生成后自动滚动到可见位置，避免用户没注意到页面下方。
+watch(plan, (val) => {
+  if (val) {
+    void nextTick(() => {
+      planEl.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
+})
 </script>
 
 <template>
@@ -78,9 +88,7 @@ function onFileChange(e: Event): void {
       <div v-if="jdStatus" class="jd-status" :class="jdStatus.kind">{{ jdStatus.text }}</div>
     </div>
 
-    <VoiceSettings />
-
-    <div v-if="plan" class="plan-preview">
+    <div ref="planEl" v-if="plan" class="plan-preview">
       <h2>📋 面试计划已生成</h2>
       <div class="plan-meta" v-if="plan.profile?.company_name">
         <b>公司</b>：{{ plan.profile.company_name }}<span v-if="plan.profile.company_type">（{{ plan.profile.company_type }}）</span>
@@ -158,6 +166,8 @@ function onFileChange(e: Event): void {
 
       <button class="btn-primary" @click="startInterview()">开始面试</button>
     </div>
+
+    <VoiceSettings />
 
     <button class="history-fab" @click="openHistory()">📚 历史面试</button>
   </div>

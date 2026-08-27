@@ -76,6 +76,7 @@ function resetInterviewState(): void {
     reconnectTimer = null
   }
   clearCreateRetry()
+  createSentForSocket = null
   if (ws) {
     ws.onclose = null
     try {
@@ -288,6 +289,7 @@ let reconnectTimer: number | null = null
 let shouldResume = false
 let streamId: number | null = null
 let createRetryTimer: number | null = null
+let createSentForSocket: WebSocket | null = null
 const pendingVoiceMsgId = ref<number | null>(null)
 let nextMsgId = 1
 
@@ -391,7 +393,9 @@ function connectWs(): void {
   ws.onopen = () => {
     connected.value = true
     reconnectAttempts = 0
-    clearCreateRetry()
+    // Fresh socket: allow one create message. Do NOT clear the retry timer
+    // here — startInterview's sendCreate relies on it to fire after open.
+    createSentForSocket = null
     if (shouldResume) {
       shouldResume = false
       sendCreate(true)
@@ -481,12 +485,18 @@ function handleWsMessage(data: WsIncoming): void {
 }
 
 function sendCreate(resume: boolean): void {
+  // Bind the retry loop to the socket that existed when this was called, so a
+  // loop left over from a previous connection can never send on a new one.
+  const target = ws
+  if (!target || createSentForSocket === target) return // already sent on this socket
   const payload: Record<string, unknown> = { action: 'create', resume }
   if (currentJd) payload.jd = currentJd
   const trySend = () => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (target !== ws) return // socket replaced — abandon this loop
+    if (target.readyState === WebSocket.OPEN) {
+      createSentForSocket = target
       createRetryTimer = null
-      ws.send(JSON.stringify(payload))
+      target.send(JSON.stringify(payload))
     } else {
       createRetryTimer = window.setTimeout(trySend, 150)
     }
@@ -558,6 +568,7 @@ export function startInterview(): void {
   streamId = null
   pendingVoiceMsgId.value = null
   clearCreateRetry()
+  createSentForSocket = null
   sendCreate(false)
 }
 
