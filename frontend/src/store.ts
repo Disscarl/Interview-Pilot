@@ -841,6 +841,21 @@ export async function deleteHistory(id: string): Promise<void> {
   await loadHistory()
 }
 
+/** 重新面试同一岗位：复用历史记录的 JD（旧记录无 JD 时用岗位名回退）。 */
+export async function reInterview(id: string): Promise<void> {
+  const rec = await api.getHistory(id)
+  currentJd =
+    rec.jd ??
+    ({
+      profile: {
+        role_title: rec.role_title,
+        company_name: rec.company_name,
+      },
+    } as JdAnalysis)
+  plan.value = currentJd
+  startInterview()
+}
+
 // ── Helpers ───────────────────────────────────────────────
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

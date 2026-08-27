@@ -9,6 +9,7 @@ import {
   viewHistoryDetail,
   backToList,
   deleteHistory,
+  reInterview,
 } from '../store'
 import type { ChatMessage, ProgressGroup } from '../types'
 import MessageBubble from '../components/MessageBubble.vue'
@@ -67,6 +68,7 @@ const orderedGroups = computed<ProgressGroup[]>(() =>
             :key="g.role_title + '|' + g.company_name"
             :group="g"
             @open="viewHistoryDetail"
+            @reinterview="reInterview"
           />
         </template>
       </template>
@@ -75,7 +77,10 @@ const orderedGroups = computed<ProgressGroup[]>(() =>
       <div v-else class="history-detail">
         <div class="hd-back">
           <button class="back-btn" @click="backToList()">← 返回</button>
-          <button class="delete-btn" @click="deleteHistory(historyDetail.id)">删除</button>
+          <div class="hd-actions">
+            <button class="re-btn" @click="reInterview(historyDetail.id)">🔄 再来一次</button>
+            <button class="delete-btn" @click="deleteHistory(historyDetail.id)">删除</button>
+          </div>
         </div>
         <div class="hd-head">
           <div class="hd-left">

@@ -119,6 +119,13 @@ def _enforce_ip_rate_limit(ip: str) -> None:
 async def save_history(state, report):
     """Persist a completed interview to the history store (best-effort)."""
     try:
+        # Keep the JD payload (profile/plan/candidate) so the user can
+        # re-interview the same position later.
+        jd = {
+            "profile": state.jd_profile,
+            "plan": state.jd_plan,
+            "candidate": state.candidate_profile,
+        }
         await save_interview(
             state.session_id,
             state.role_title or "面试",
@@ -126,6 +133,7 @@ async def save_history(state, report):
             state.messages,
             report,
             state.user_id,
+            jd=jd,
         )
     except Exception as e:
         logger.warning("Failed to save history: %s", e)

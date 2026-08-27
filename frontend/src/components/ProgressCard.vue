@@ -4,7 +4,7 @@ import type { ProgressGroup } from '../types'
 import RadarChart from './RadarChart.vue'
 
 const props = defineProps<{ group: ProgressGroup }>()
-const emit = defineEmits<{ (e: 'open', id: string): void }>()
+const emit = defineEmits<{ (e: 'open', id: string): void; (e: 'reinterview', id: string): void }>()
 
 // Backend returns attempts oldest-first; records display newest-first.
 const attemptsDesc = computed(() =>
@@ -12,6 +12,8 @@ const attemptsDesc = computed(() =>
     (b.created_at || '').localeCompare(a.created_at || ''),
   ),
 )
+
+const latestId = computed(() => attemptsDesc.value[0]?.id ?? '')
 
 const attemptsAsc = computed(() => props.group.attempts)
 
@@ -58,20 +60,23 @@ function scoreText(score: number | null | undefined): string {
 
 <template>
   <div class="progress-card">
-    <!-- 分组头：岗位 + 次数 + 总分变化 -->
+    <!-- 分组头：岗位 + 次数 + 总分变化 + 重考 -->
     <div class="pc-head">
       <div class="pc-title">
         {{ group.role_title }}<span v-if="group.company_name"> · {{ group.company_name }}</span>
       </div>
-      <div class="pc-meta">
-        <span>{{ attemptsDesc.length }} 次面试</span>
-        <span
-          v-if="trend"
-          class="pc-delta"
-          :class="{ up: trend.up, down: !trend.up && !trend.flat }"
-        >
-          {{ trend.up ? '▲' : trend.flat ? '—' : '▼' }} {{ Math.abs(trend.delta).toFixed(1) }}
-        </span>
+      <div class="pc-head-right">
+        <div class="pc-meta">
+          <span>{{ attemptsDesc.length }} 次面试</span>
+          <span
+            v-if="trend"
+            class="pc-delta"
+            :class="{ up: trend.up, down: !trend.up && !trend.flat }"
+          >
+            {{ trend.up ? '▲' : trend.flat ? '—' : '▼' }} {{ Math.abs(trend.delta).toFixed(1) }}
+          </span>
+        </div>
+        <button class="pc-re-btn" @click="emit('reinterview', latestId)">🔄 重新面试</button>
       </div>
     </div>
 

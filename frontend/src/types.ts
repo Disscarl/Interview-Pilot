@@ -108,6 +108,8 @@ export interface HistoryRecord {
   overall_score?: number
   report?: Report
   messages?: TranscriptMessage[]
+  /** The {profile, plan, candidate} payload used to run this interview (for re-interview). */
+  jd?: JdAnalysis | null
 }
 
 export interface ProgressAttempt {

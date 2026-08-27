@@ -35,7 +35,8 @@ async def init_db(path: str):
                 overall_score REAL,
                 summary TEXT,
                 messages TEXT,
-                report TEXT
+                report TEXT,
+                jd TEXT
             )
         """)
         # Migrate pre-auth databases: add the user_id column if missing.
@@ -43,6 +44,9 @@ async def init_db(path: str):
         columns = [row[1] for row in await cursor.fetchall()]
         if "user_id" not in columns:
             await db.execute("ALTER TABLE interviews ADD COLUMN user_id INTEGER")
+        # Migrate older rows: add the jd column if missing (keeps re-interview data).
+        if "jd" not in columns:
+            await db.execute("ALTER TABLE interviews ADD COLUMN jd TEXT")
 
         # One-time migration: assign pre-auth orphan rows (user_id IS NULL) to
         # the reserved legacy owner account so they stay visible.
@@ -95,19 +99,22 @@ async def get_user_by_id(user_id: int) -> dict | None:
 # ─── Interviews ───────────────────────────────────────────
 
 async def save_interview(session_id: str, role_title: str, company_name: str,
-                         messages: list, report: dict | None, user_id: int):
+                         messages: list, report: dict | None, user_id: int,
+                         jd: dict | None = None):
     """Persist a completed interview (transcript + report) for a user.
 
     `report` may be None (e.g. evaluation failed) — the row is still saved
     with an empty report so the transcript is never lost.
+    `jd` is the {profile, plan, candidate} payload used to run the interview,
+    kept so the user can re-interview the same position later.
     """
     report = report or {}
     async with aiosqlite.connect(_DB_PATH) as db:
         await db.execute(
             """
             INSERT OR REPLACE INTO interviews
-            (id, user_id, role_title, company_name, created_at, overall_score, summary, messages, report)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, user_id, role_title, company_name, created_at, overall_score, summary, messages, report, jd)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -119,6 +126,7 @@ async def save_interview(session_id: str, role_title: str, company_name: str,
                 report.get("summary", ""),
                 json.dumps(messages, ensure_ascii=False),
                 json.dumps(report, ensure_ascii=False),
+                json.dumps(jd, ensure_ascii=False) if jd else None,
             ),
         )
         await db.commit()
@@ -150,6 +158,7 @@ async def get_interview(interview_id: str, user_id: int) -> dict | None:
     d = _row_to_dict(row)
     d["messages"] = json.loads(d["messages"]) if d["messages"] else []
     d["report"] = json.loads(d["report"]) if d["report"] else {}
+    d["jd"] = json.loads(d["jd"]) if d["jd"] else None
     return d
 
 

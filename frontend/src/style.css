@@ -414,6 +414,18 @@ body {
 .history-empty { text-align: center; color: var(--text-dim); padding: 60px 0; font-size: 14px; line-height: 1.8; }
 .history-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
 .history-detail .hd-back { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.hd-actions { display: flex; align-items: center; gap: 8px; }
+.re-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--gold);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.re-btn:hover { border-color: var(--gold); background: rgba(230, 193, 90, 0.08); }
 .history-detail .hd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .history-detail .hd-left { min-width: 0; }
 .history-detail .hd-role { font-size: 18px; font-weight: 700; }
@@ -560,6 +572,19 @@ body {
   margin-bottom: 10px;
 }
 .progress-card .pc-title { font-size: 15px; font-weight: 600; }
+.progress-card .pc-head-right { display: flex; align-items: center; gap: 12px; }
+.pc-re-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.pc-re-btn:hover { color: var(--gold); border-color: var(--gold); }
 .progress-card .pc-meta {
   display: flex;
   align-items: center;

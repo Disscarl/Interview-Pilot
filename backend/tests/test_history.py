@@ -57,6 +57,25 @@ class HistoryTest(IsolatedAsyncioTestCase):
         self.assertIsNotNone(rec)
         self.assertEqual(rec["report"], {})
 
+    async def test_jd_roundtrip_for_reinterview(self):
+        a = await create_user("jduser", "h")
+        messages = [{"role": "interviewer", "content": "你好"}]
+        jd = {
+            "profile": {"role_title": "UE开发", "company_name": "某公司", "tech_stack": ["C++", "UE"]},
+            "plan": {"summary": "深度考察", "stages": []},
+            "candidate": {"skills": ["C++"], "years_of_experience": "3年"},
+        }
+        await save_interview("sess_jd", "UE开发", "某公司", messages, {"overall_score": 4.0}, a, jd=jd)
+        rec = await get_interview("sess_jd", a)
+        self.assertEqual(rec["jd"], jd)
+        self.assertEqual(rec["jd"]["profile"]["role_title"], "UE开发")
+
+    async def test_legacy_row_without_jd_returns_none(self):
+        a = await create_user("legacy", "h")
+        await save_interview("sess_legacy", "岗位", "公司", [], {"overall_score": 3.0}, a)
+        rec = await get_interview("sess_legacy", a)
+        self.assertIsNone(rec["jd"])
+
     async def test_list_progress_groups(self):
         a = await create_user("prog", "h")
         msg = [{"role": "interviewer", "content": "你好", "phase": "intro"}]
