@@ -16,6 +16,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from models.interview import InterviewPhase
+from agent.tools import build_interview_tools
 
 logger = logging.getLogger("interview-pilot")
 
@@ -62,8 +63,9 @@ def build_interview_step_graph(interviewer, evaluator, ws, save_history):
     async def generate_node(state: InterviewStepState) -> dict:
         interview = state["interview"]
         score_info = state.get("score_info")
+        tools = build_interview_tools(interview)
         await ws.send_text(json.dumps({"type": "thinking", "content": True}))
-        async for token in interviewer.stream_next(interview, score_info):
+        async for token in interviewer.stream_next(interview, score_info, tools=tools):
             await ws.send_text(json.dumps({"type": "stream_token", "content": token}))
         await ws.send_text(json.dumps({"type": "stream_end", "phase": interview.phase.value}))
         return {"ended": False}

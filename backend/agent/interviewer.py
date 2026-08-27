@@ -2,7 +2,7 @@
 import json
 import logging
 from typing import AsyncGenerator
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage, ToolMessage
 
 from models.interview import InterviewState, InterviewPhase
 from models.schemas import AnswerScore, EvaluationReport
@@ -291,12 +291,22 @@ class InterviewerAgent:
         async for token in self.stream_next(state, score_info):
             yield token
 
-    async def stream_next(self, state: InterviewState, score_info: dict | None = None) -> AsyncGenerator[str, None]:
+    async def stream_next(
+        self,
+        state: InterviewState,
+        score_info: dict | None = None,
+        tools: list | None = None,
+    ) -> AsyncGenerator[str, None]:
         """Stream the interviewer's next message using a precomputed answer score.
 
         Used by the LangGraph step (the graph scores in a separate node, then
         calls this to generate). Advances the phase first, exactly like the
         old generate_next_stream did.
+
+        When `tools` is provided the model is bound via `bind_tools` — the
+        streamed turn may first issue tool calls (executed and fed back as
+        ToolMessages), then stream the actual question. The tool loop is
+        bounded (max 3 rounds) so a misbehaving model can't loop forever.
         """
         if self.should_transition(state):
             state.phase = self._next_phase(state.phase)
@@ -306,14 +316,54 @@ class InterviewerAgent:
 
         messages.append(HumanMessage(content=f"候选人的最新回答:\n{candidate_answer}\n\n请根据你的追问规则，给出下一个面试官发言。"))
 
+        try:
+            model = self.llm.bind_tools(tools) if tools else self.llm
+        except Exception:
+            model = self.llm  # fake/unsupported LLMs fall back to plain streaming
+
         full_response = ""
-        async for chunk in self.llm.astream(messages):
-            token = chunk.content if hasattr(chunk, 'content') else str(chunk)
-            if token:
-                full_response += token
-                yield token
+        for _ in range(3):  # bounded tool loop
+            accumulated = None
+            round_text = ""
+            async for chunk in model.astream(messages):
+                if isinstance(chunk, AIMessageChunk):
+                    accumulated = chunk if accumulated is None else accumulated + chunk
+                elif accumulated is None:
+                    accumulated = chunk  # non-chunk fakes: keep first for tool_calls check
+                token = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if token:
+                    round_text += token
+                    yield token
+            full_response = round_text
+            tool_calls = (getattr(accumulated, "tool_calls", None) or []) if accumulated is not None else []
+            if not tool_calls:
+                break
+            messages = await self._run_tool_round(messages, accumulated, tools or [], tool_calls)
 
         state.add_message("interviewer", full_response)
+
+    async def _run_tool_round(self, messages: list, ai_chunk, tools: list, tool_calls: list) -> list:
+        """Execute the model's tool calls and append assistant + tool messages."""
+        messages.append(AIMessage(content=getattr(ai_chunk, "content", "") or "", tool_calls=tool_calls))
+        tool_map = {t.name: t for t in tools}
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            args = tc.get("args") or {}
+            fn = tool_map.get(name)
+            try:
+                result = fn.invoke(args) if fn is not None else f"未知工具：{name}"
+            except Exception as e:
+                result = f"工具调用失败：{e}"
+            logger.info(
+                "Tool call: %s %s -> %d 字符",
+                name,
+                json.dumps(args, ensure_ascii=False)[:120],
+                len(str(result)),
+            )
+            messages.append(
+                ToolMessage(content=str(result), tool_call_id=tc.get("id", ""), name=name)
+            )
+        return messages
 
 
 class EvaluatorAgent:

@@ -8,6 +8,7 @@
 - **简历解析**：上传 PDF / Word，提取候选人画像，面试官据此结合真实经历追问。
 - **流式对话**：WebSocket token 级流式输出，前端原位渲染；断线自动重连并恢复会话。
 - **自适应追问（回答质量评分）**：每轮回答后由 LLM 快速评分（1-5）并注入下一题提示，评分低引导细节、评分高升级到架构/方案层难度。
+- **工具调用（Function Calling）**：面试官通过 `bind_tools` 调用真实工具——按关键词检索候选人简历片段、查询公司调研资料，让追问基于真实经历而非凭空猜测（工具执行与结果回填可见于日志）。
 - **语音输入（STT）**：讯飞语音听写，最长 5 分钟录音，服务端自动切分转写，微信式语音条 + 「转文字」。
 - **语音播报（TTS）**：讯飞超拟人音色，音色/语速可选、手动点播、试听；自动过滤 `（笑）（停顿）` 等语气词。
 - **评估报告**：多维度评分（进度条 + 雷达图）+ 亮点/薄弱点/学习建议。
@@ -19,7 +20,7 @@
 
 - **后端**：FastAPI + WebSocket + Uvicorn（单进程 `--workers 1`）
 - **LLM 应用**：LangChain + DeepSeek（`langchain-openai`，OpenAI 兼容接口；也兼容 Anthropic/OpenAI key）
-- **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）
+- **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）+ `bind_tools` 工具调用闭环
 - **语音**：讯飞开放平台（STT 语音听写 + TTS 超拟人语音合成）
 - **存储**：SQLite（`aiosqlite`），音频文件落盘，TTS 结果磁盘缓存
 - **前端**：Vue 3 + Vite + TypeScript（组件化，见 `frontend/src/`）
