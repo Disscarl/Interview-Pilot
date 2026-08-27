@@ -476,7 +476,8 @@
     padding: 28px;
     max-width: 600px;
     width: 90%;
-    max-height: 85vh;
+    /* body 被整体放大 1.5 倍：vh 需先除以缩放系数，否则渲染后超出视口 */
+    max-height: calc(85vh / 1.5);
     overflow-y: auto;
   }
   .modal h2 { font-size: 22px; margin-bottom: 6px; }
