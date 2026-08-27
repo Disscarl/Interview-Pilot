@@ -1,6 +1,6 @@
 // HTTP client with JWT bearer auth + typed endpoint helpers.
 import { ref } from 'vue'
-import type { HistoryItem, HistoryRecord, JdAnalysis, ProgressGroup } from './types'
+import type { HistoryRecord, JdAnalysis, ProgressGroup } from './types'
 
 export const authToken = ref<string>(localStorage.getItem('auth_token') || '')
 
@@ -106,13 +106,6 @@ export async function ttsPreview(text: string, voice: string, speed: number): Pr
   const data = (await resp.json()) as { audio_base64?: string } & ErrorBody
   if (!resp.ok) throw new Error(errMessage(resp, data, '语音合成失败'))
   return data.audio_base64 || ''
-}
-
-export async function listHistory(): Promise<HistoryItem[]> {
-  const resp = await apiFetch('/api/history')
-  const data = (await resp.json()) as { interviews?: HistoryItem[] } & ErrorBody
-  if (!resp.ok) throw new Error(errMessage(resp, data, '加载失败'))
-  return data.interviews || []
 }
 
 export async function listProgress(): Promise<ProgressGroup[]> {

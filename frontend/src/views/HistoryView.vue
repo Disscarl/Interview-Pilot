@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import {
   showView,
-  historyItems,
   historyDetail,
   historyLoading,
   historyError,
@@ -11,7 +10,7 @@ import {
   backToList,
   deleteHistory,
 } from '../store'
-import type { ChatMessage } from '../types'
+import type { ChatMessage, ProgressGroup } from '../types'
 import MessageBubble from '../components/MessageBubble.vue'
 import ReportBody from '../components/ReportBody.vue'
 import ProgressCard from '../components/ProgressCard.vue'
@@ -35,6 +34,15 @@ const detailMessages = computed<ChatMessage[]>(() =>
     transcript: m.audio_url ? m.content : undefined,
   })),
 )
+
+// 按岗位分组的卡片，最近活跃的岗位排最前。
+const orderedGroups = computed<ProgressGroup[]>(() =>
+  [...progressGroups.value].sort((a, b) => {
+    const lastA = a.attempts[a.attempts.length - 1]?.created_at || ''
+    const lastB = b.attempts[b.attempts.length - 1]?.created_at || ''
+    return lastB.localeCompare(lastA)
+  }),
+)
 </script>
 
 <template>
@@ -45,36 +53,26 @@ const detailMessages = computed<ChatMessage[]>(() =>
     </div>
 
     <div class="history-container">
-      <!-- Progress (multi-round comparison) -->
-      <div v-if="!historyDetail && progressGroups.length" class="progress-section">
-        <div class="section-title">📈 进步趋势（按岗位分组）</div>
-        <ProgressCard v-for="(g, i) in progressGroups" :key="i" :group="g" />
-      </div>
-
-      <!-- List -->
-      <div v-if="!historyDetail" id="history-list">
+      <!-- 分组列表：每个岗位一张卡片（趋势概览 + 历次记录） -->
+      <template v-if="!historyDetail">
         <div v-if="historyLoading" class="history-empty">加载中…</div>
         <div v-else-if="historyError" class="history-empty">加载失败：{{ historyError }}</div>
-        <div v-else-if="!historyItems.length" class="history-empty">
+        <div v-else-if="!orderedGroups.length" class="history-empty">
           还没有历史面试记录<br />完成一次面试后会自动保存到这里
         </div>
-        <div
-          v-for="it in historyItems"
-          v-else
-          :key="it.id"
-          class="history-card"
-          @click="viewHistoryDetail(it.id)"
-        >
-          <div class="hc-top">
-            <span class="hc-role">{{ it.role_title || '面试' }}</span>
-            <span class="hc-score">{{ scoreText(it.overall_score) }}</span>
-          </div>
-          <div class="hc-meta">{{ it.company_name || '未知公司' }} · {{ it.created_at || '' }}</div>
-        </div>
-      </div>
+        <template v-else>
+          <div class="history-subtitle">按岗位分组 · 点击记录查看详情</div>
+          <ProgressCard
+            v-for="(g, i) in orderedGroups"
+            :key="g.role_title + '|' + g.company_name"
+            :group="g"
+            @open="viewHistoryDetail"
+          />
+        </template>
+      </template>
 
-      <!-- Detail -->
-      <div v-else-if="historyDetail" class="history-detail">
+      <!-- 详情 -->
+      <div v-else class="history-detail">
         <div class="hd-back">
           <button class="back-btn" @click="backToList()">← 返回</button>
           <button class="delete-btn" @click="deleteHistory(historyDetail.id)">删除</button>

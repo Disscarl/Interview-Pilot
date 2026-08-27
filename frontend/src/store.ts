@@ -5,7 +5,6 @@ import { ref } from 'vue'
 import type {
   CandidateVoiceData,
   ChatMessage,
-  HistoryItem,
   HistoryRecord,
   JdAnalysis,
   ProgressGroup,
@@ -794,7 +793,6 @@ export function closeReport(): void {
 }
 
 // ── History ───────────────────────────────────────────────
-export const historyItems = ref<HistoryItem[]>([])
 export const historyDetail = ref<HistoryRecord | null>(null)
 export const historyLoading = ref(false)
 export const historyError = ref('')
@@ -810,17 +808,12 @@ export async function loadHistory(): Promise<void> {
   historyError.value = ''
   historyDetail.value = null
   try {
-    historyItems.value = await api.listHistory()
+    progressGroups.value = await api.listProgress()
   } catch (e) {
     historyError.value = e instanceof Error ? e.message : '加载失败'
+  } finally {
+    historyLoading.value = false
   }
-  // Progress is best-effort: a failure must not break the history list.
-  try {
-    progressGroups.value = await api.listProgress()
-  } catch {
-    progressGroups.value = []
-  }
-  historyLoading.value = false
 }
 
 export async function viewHistoryDetail(id: string): Promise<void> {

@@ -4,58 +4,82 @@ import type { ProgressGroup } from '../types'
 import RadarChart from './RadarChart.vue'
 
 const props = defineProps<{ group: ProgressGroup }>()
+const emit = defineEmits<{ (e: 'open', id: string): void }>()
 
-const attempts = computed(() => props.group.attempts)
+// Backend returns attempts oldest-first; records display newest-first.
+const attemptsDesc = computed(() =>
+  [...props.group.attempts].sort((a, b) =>
+    (b.created_at || '').localeCompare(a.created_at || ''),
+  ),
+)
+
+const attemptsAsc = computed(() => props.group.attempts)
 
 const W = 220
 const H = 52
 
 function xy(i: number, score: number): { x: number; y: number } {
-  const x = attempts.value.length <= 1 ? W / 2 : (i / (attempts.value.length - 1)) * W
+  const x = attemptsAsc.value.length <= 1 ? W / 2 : (i / (attemptsAsc.value.length - 1)) * W
   const y = H - 5 - (Math.max(0, Math.min(5, score)) / 5) * (H - 10)
   return { x, y }
 }
 
 const linePoints = computed(() =>
-  attempts.value.map((a, i) => {
+  attemptsAsc.value.map((a, i) => {
     const p = xy(i, a.overall_score ?? 0)
     return `${p.x},${p.y}`
   }).join(' '),
 )
 
 const dots = computed(() =>
-  attempts.value.map((a, i) => xy(i, a.overall_score ?? 0)),
+  attemptsAsc.value.map((a, i) => xy(i, a.overall_score ?? 0)),
 )
 
 const trend = computed<{ delta: number; up: boolean; flat: boolean } | null>(() => {
-  const scores = attempts.value.map((a) => a.overall_score ?? 0)
+  const scores = attemptsAsc.value.map((a) => a.overall_score ?? 0)
   if (scores.length < 2) return null
   const delta = scores[scores.length - 1] - scores[0]
   return { delta, up: delta > 0.05, flat: Math.abs(delta) <= 0.05 }
 })
 
 const latestDims = computed<Record<string, number>>(() => {
-  const last = attempts.value[attempts.value.length - 1]
+  const last = attemptsAsc.value[attemptsAsc.value.length - 1]
   const out: Record<string, number> = {}
   for (const [name, dim] of Object.entries(last?.dimension_scores || {})) {
     out[name] = dim.score
   }
   return out
 })
+
+function scoreText(score: number | null | undefined): string {
+  return score != null ? score.toFixed(1) : '—'
+}
 </script>
 
 <template>
   <div class="progress-card">
+    <!-- 分组头：岗位 + 次数 + 总分变化 -->
     <div class="pc-head">
       <div class="pc-title">
         {{ group.role_title }}<span v-if="group.company_name"> · {{ group.company_name }}</span>
       </div>
-      <div class="pc-meta">{{ attempts.length }} 次面试</div>
+      <div class="pc-meta">
+        <span>{{ attemptsDesc.length }} 次面试</span>
+        <span
+          v-if="trend"
+          class="pc-delta"
+          :class="{ up: trend.up, down: !trend.up && !trend.flat }"
+        >
+          {{ trend.up ? '▲' : trend.flat ? '—' : '▼' }} {{ Math.abs(trend.delta).toFixed(1) }}
+        </span>
+      </div>
     </div>
-    <div class="pc-body">
+
+    <!-- 趋势概览：多轮才对比 -->
+    <div v-if="attemptsDesc.length >= 2" class="pc-body">
       <div class="pc-chart">
         <div class="pc-label">总分趋势（/5）</div>
-        <svg v-if="attempts.length > 1" :viewBox="`0 0 ${W} ${H}`" class="sparkline">
+        <svg :viewBox="`0 0 ${W} ${H}`" class="sparkline">
           <polyline :points="linePoints" class="spark-line" />
           <circle
             v-for="(d, i) in dots"
@@ -66,19 +90,24 @@ const latestDims = computed<Record<string, number>>(() => {
             class="spark-dot"
           />
         </svg>
-        <div v-else class="spark-empty">至少完成 2 次面试才能显示趋势</div>
-        <div
-          v-if="trend"
-          class="pc-delta"
-          :class="{ up: trend.up, down: !trend.up && !trend.flat }"
-        >
-          {{ trend.up ? '▲' : trend.flat ? '—' : '▼' }} {{ Math.abs(trend.delta).toFixed(1) }}
-        </div>
       </div>
       <div class="pc-radar">
         <div class="pc-label">最新一轮维度</div>
         <RadarChart v-if="Object.keys(latestDims).length >= 3" :dimensions="latestDims" />
         <div v-else class="spark-empty">维度数据不足</div>
+      </div>
+    </div>
+
+    <!-- 该岗位的历次面试记录 -->
+    <div class="pc-records">
+      <div
+        v-for="a in attemptsDesc"
+        :key="a.id"
+        class="pc-record"
+        @click="emit('open', a.id)"
+      >
+        <span class="pr-date">{{ a.created_at || '' }}</span>
+        <span class="pr-score">{{ scoreText(a.overall_score) }}</span>
       </div>
     </div>
   </div>
