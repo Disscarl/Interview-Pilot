@@ -1,6 +1,6 @@
 # Interview Pilot — AI 面试模拟器
 
-根据「简历 + 岗位 JD」生成定制化 AI 模拟面试：面试官流式提问、自适应追问，支持**语音问答**（用户语音输入 STT、面试官语音播报 TTS），结束后生成多维度评估报告，并可回看历史面试。支持**注册/登录（JWT）与多用户数据隔离**。
+根据「简历 + 岗位 JD」生成定制化 AI 模拟面试：面试官流式提问、自适应追问，支持**语音问答**（用户语音输入 ASR、面试官语音播报 TTS），结束后生成多维度评估报告，并可回看历史面试。支持**注册/登录（JWT）与多用户数据隔离**。
 
 ## 功能
 
@@ -9,7 +9,7 @@
 - **流式对话**：WebSocket token 级流式输出，前端原位渲染；断线自动重连并恢复会话。
 - **自适应追问（回答质量评分）**：每轮回答后由 LLM 快速评分（1-5）并注入下一题提示，评分低引导细节、评分高升级到架构/方案层难度。
 - **工具调用（Function Calling）**：面试官通过 `bind_tools` 调用真实工具——按关键词检索候选人简历片段、查询公司调研资料，让追问基于真实经历而非凭空猜测（工具执行与结果回填可见于日志）。
-- **语音输入（STT）**：讯飞语音听写，最长 5 分钟录音，服务端自动切分转写，微信式语音条 + 「转文字」。
+- **语音输入（ASR）**：讯飞语音听写，最长 5 分钟录音，服务端自动切分转写，微信式语音条 + 「转文字」。
 - **语音播报（TTS）**：讯飞超拟人音色，音色/语速可选、手动点播、试听；自动过滤 `（笑）（停顿）` 等语气词。
 - **评估报告**：多维度评分（进度条 + 雷达图）+ 亮点/薄弱点/学习建议。
 - **教练复盘（多 Agent）**：面试官 / 评估官 / 教练三个角色在 LangGraph 上协作——历史详情页可一键生成教练复盘（薄弱点分析 → 学习计划 → 下次面试针对性首问）。
@@ -22,7 +22,7 @@
 - **后端**：FastAPI + WebSocket + Uvicorn（单进程 `--workers 1`）
 - **LLM 应用**：LangChain + DeepSeek（`langchain-openai`，OpenAI 兼容接口；也兼容 Anthropic/OpenAI key）
 - **Agent 编排**：LangGraph 面试状态图（每轮一步：`score_answer → route → generate_question / evaluate`，用户回答即人工输入点；WS 协议不变）+ `bind_tools` 工具调用闭环 + 多 Agent（面试官/评估官/教练）
-- **语音**：讯飞开放平台（STT 语音听写 + TTS 超拟人语音合成）
+- **语音**：讯飞开放平台（ASR 语音听写 + TTS 超拟人语音合成）
 - **存储**：SQLite（`aiosqlite`），音频文件落盘，TTS 结果磁盘缓存
 - **前端**：Vue 3 + Vite + TypeScript（组件化，见 `frontend/src/`）
 
@@ -47,7 +47,7 @@ DEEPSEEK_API_KEY=sk-xxx
 # JWT 密钥（务必修改；INTERVIEW_PILOT_ENV=prod 时缺失会拒绝启动）
 JWT_SECRET=请改成一段足够长的随机字符串
 
-# 讯飞开放平台（STT + TTS 共用，注册后获取）
+# 讯飞开放平台（ASR + TTS 共用，注册后获取）
 IFLYTEK_APP_ID=
 IFLYTEK_API_KEY=
 IFLYTEK_API_SECRET=
@@ -109,7 +109,7 @@ interview-pilot/
 │   │   ├── llm.py           # LLM 服务（DeepSeek/OpenAI/Anthropic）
 │   │   ├── jd.py            # JD 解析 + 公司调研（百度）
 │   │   ├── resume.py        # 简历解析（PDF/Word）
-│   │   ├── asr.py           # 讯飞 STT（长录音切分转写）
+│   │   ├── asr.py           # 讯飞 ASR（长录音切分转写）
 │   │   ├── tts.py           # 讯飞超拟人 TTS + 磁盘缓存
 │   │   ├── session.py       # 会话管理（内存态，TTL 清理）
 │   │   └── history.py       # 历史持久化（SQLite）

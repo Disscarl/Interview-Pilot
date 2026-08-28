@@ -17,6 +17,7 @@ import main  # noqa: E402
 from agent.interviewer import InterviewerAgent, EvaluatorAgent  # noqa: E402
 from services.ratelimit import rate_limiter  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
+from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
 
 class FakeLLM:
@@ -142,6 +143,30 @@ class WsTest(TestCase):
             ws.send_json({"action": "answer", "content": "继续"})
             got = _drain(ws, {"stream_end"})
             self.assertEqual(got[-1]["type"], "stream_end")
+
+    def test_traversal_session_id_rejected(self):
+        """R1: WS session_id must be whitelisted before any filesystem use.
+
+        A percent-encoded traversal id (..%5C..%5C...) previously reached
+        os.path.join in the answer_audio branch, letting an authenticated
+        user write WAV files outside the audio dir.
+        """
+        token = self._register("mallory")
+        sid = "..%5C..%5Cevil"
+        with self.assertRaises(WebSocketDisconnect) as ctx:
+            with self.client.websocket_connect(f"/ws/{sid}?token={token}"):
+                pass  # pragma: no cover — must never reach this point
+        self.assertEqual(ctx.exception.code, 4400)
+
+        # No files/dirs were created outside the (temp) audio dir.
+        audio_root = main.settings.audio_dir
+        self.assertFalse(os.path.exists(os.path.join(audio_root, "..", "..", "evil")))
+
+        # A well-formed id still connects fine.
+        with self.client.websocket_connect(f"/ws/sess_ok_1?token={token}") as ws:
+            ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
+            got = _drain(ws, {"stream_end"})
+            self.assertEqual(got[0]["type"], "created")
 
 
 if __name__ == "__main__":

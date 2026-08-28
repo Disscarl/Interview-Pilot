@@ -453,6 +453,12 @@ async def tts_preview(req: TtsPreviewRequest, user: dict = Depends(get_current_u
 @app.websocket("/ws/{session_id}")
 async def websocket_interview(ws: WebSocket, session_id: str):
     """Main interview WebSocket connection."""
+    # session_id is client-controlled and later used in filesystem paths
+    # (audio dir for voice answers) — whitelist it like /api/audio does, so
+    # traversal payloads (e.g. ..%5C..%5C) can never escape the audio dir.
+    if not _ID_RE.match(session_id):
+        await ws.close(code=4400)
+        return
     user_id = _user_id_from_token(ws.query_params.get("token", ""))
     if user_id is None or not await get_user_by_id(user_id):
         await ws.close(code=4401)
