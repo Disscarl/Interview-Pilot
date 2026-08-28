@@ -2,8 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 
-from agent.interviewer import _limit_transcript, InterviewerAgent
-from models.interview import InterviewState
+from agent.interviewer import _limit_transcript, _looks_like_closing, InterviewerAgent
+from models.interview import InterviewPhase, InterviewState
 
 
 class LimitTranscriptTest(unittest.TestCase):
@@ -17,6 +17,20 @@ class LimitTranscriptTest(unittest.TestCase):
         self.assertIn("省略", r)
         self.assertTrue(r.startswith("字" * 10))  # head kept
         self.assertTrue(r.endswith("字" * 10))    # tail kept
+
+
+class ClosingDetectionTest(unittest.TestCase):
+    def test_closing_markers_detected(self):
+        self.assertTrue(_looks_like_closing("今天的面试就到这里，感谢你的参与。"))
+        self.assertTrue(_looks_like_closing("感谢你参加本次面试，再见！"))
+        self.assertTrue(_looks_like_closing("面试到此结束，期待你的好消息。"))
+        self.assertTrue(_looks_like_closing("祝你好运，保持联系。"))
+
+    def test_non_closing_messages_not_detected(self):
+        self.assertFalse(_looks_like_closing("你能具体说说这个项目的难点吗？"))
+        self.assertFalse(_looks_like_closing("介绍一下你负责的模块。"))
+        self.assertFalse(_looks_like_closing(""))
+        self.assertFalse(_looks_like_closing("我看看你的简历，稍等。"))
 
 
 class FakeLLM:
@@ -82,6 +96,24 @@ class ScoringTest(IsolatedAsyncioTestCase):
         tokens = [t async for t in agent.generate_next_stream(state)]
         self.assertEqual("".join(tokens), "好的")
         self.assertEqual(state.messages[-1]["role"], "interviewer")
+
+    async def test_closing_message_advances_phase(self):
+        agent = InterviewerAgent(FakeLLM(chunks=("今天的面试就到这里，感谢你的参与，", "期待你的好消息。")))
+        state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
+        state.phase = InterviewPhase.TECH_2
+        tokens = [t async for t in agent.stream_next(state)]
+        self.assertTrue("".join(tokens))
+        self.assertEqual(state.phase, InterviewPhase.CLOSING)
+        self.assertEqual(state.messages[-1]["phase"], "closing")
+
+    async def test_normal_message_keeps_phase(self):
+        agent = InterviewerAgent(FakeLLM(chunks=("能具体说说", "这个项目吗？")))
+        state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
+        state.phase = InterviewPhase.TECH_2
+        tokens = [t async for t in agent.stream_next(state)]
+        self.assertEqual("".join(tokens), "能具体说说这个项目吗？")
+        self.assertEqual(state.phase, InterviewPhase.TECH_2)
+        self.assertEqual(state.messages[-1]["phase"], "tech_2")
 
 
 if __name__ == "__main__":

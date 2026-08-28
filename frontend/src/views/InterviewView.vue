@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import {
   backHome,
   phaseBadge,
+  currentPhase,
   messages,
   inputText,
   inputHint,
@@ -19,9 +20,25 @@ import {
   uiState,
 } from '../store'
 import MessageBubble from '../components/MessageBubble.vue'
+import { PHASE_ORDER, phaseLabel } from '../utils'
 
 const chatEl = ref<HTMLElement | null>(null)
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
+
+// Phase progress track: done < current < pending.
+const currentIdx = computed(() => {
+  const p = currentPhase.value
+  if (p === 'done') return PHASE_ORDER.length // all steps done
+  if (!p) return -1
+  return PHASE_ORDER.indexOf(p as (typeof PHASE_ORDER)[number])
+})
+const stepClass = (i: number): string => {
+  const idx = currentIdx.value
+  if (idx < 0) return ''
+  if (i < idx) return 'done'
+  if (i === idx) return 'current'
+  return ''
+}
 
 function scrollToBottom(): void {
   void nextTick(() => {
@@ -67,6 +84,17 @@ watch(inputText, () => {
       <div class="topbar-right">
         <span class="badge"><span class="dot"></span>{{ phaseBadge }}</span>
       </div>
+    </div>
+
+    <div v-if="currentIdx >= 0" class="phase-track">
+      <span
+        v-for="(key, i) in PHASE_ORDER"
+        :key="key"
+        class="phase-step"
+        :class="stepClass(i)"
+      >
+        {{ phaseLabel(key) }}
+      </span>
     </div>
 
     <div ref="chatEl" class="chat-container">

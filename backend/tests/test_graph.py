@@ -95,6 +95,7 @@ class GraphStepTest(IsolatedAsyncioTestCase):
         self.assertIn("interview_end", types)
         self.assertEqual(self.ws.sent[-1]["type"], "report")
         self.assertEqual(self.ws.sent[-1]["report"]["overall_score"], 4.0)
+        self.assertEqual(self.ws.sent[-1]["id"], "s1")
         self.assertEqual(len(self.saved), 1)
         self.assertEqual(self.saved[0][0], "s1")
 

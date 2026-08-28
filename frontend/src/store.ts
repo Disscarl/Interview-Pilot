@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import type {
   CandidateVoiceData,
   ChatMessage,
+  CoachReport,
   HistoryRecord,
   JdAnalysis,
   ProgressGroup,
@@ -94,6 +95,9 @@ function resetInterviewState(): void {
   inputText.value = ''
   clearInputHint()
   setPhaseBadge(null)
+  lastReportId.value = null
+  reportCoach.value = null
+  reportCoachError.value = ''
 }
 
 export function logout(): void {
@@ -276,6 +280,8 @@ export const messages = ref<ChatMessage[]>([])
 export const connected = ref(false)
 export const uiState = ref<'pre' | 'active' | 'done'>('pre')
 export const phaseBadge = ref('准备中')
+/** Raw phase key of the current stage ('' | intro | warm_up | … | closing | done). */
+export const currentPhase = ref<string | null>(null)
 export const inputText = ref('')
 export const inputHint = ref('Enter 发送 · Shift+Enter 换行 · 🎤 语音输入')
 export const inputHintError = ref(false)
@@ -302,6 +308,7 @@ export const endDisabled = () => uiState.value !== 'active' || !connected.value
 export const inputDisabled = () => uiState.value !== 'active'
 
 function setPhaseBadge(phase: string | null): void {
+  currentPhase.value = phase
   phaseBadge.value =
     phase === 'done'
       ? '完成'
@@ -471,6 +478,9 @@ function handleWsMessage(data: WsIncoming): void {
       stopTtsAudio()
       removeTyping()
       closedByUser = true
+      lastReportId.value = data.id || null
+      reportCoach.value = null
+      reportCoachError.value = ''
       showReport(data.report)
       setUIState('done')
       break
@@ -869,6 +879,27 @@ export async function generateCoach(id: string): Promise<void> {
     historyError.value = e instanceof Error ? e.message : '生成失败'
   } finally {
     coachLoading.value = false
+  }
+}
+
+// ── Report-modal coach（面试结束即刻可见） ────────────────
+export const lastReportId = ref<string | null>(null)
+export const reportCoach = ref<CoachReport | null>(null)
+export const reportCoachLoading = ref(false)
+export const reportCoachError = ref('')
+
+/** 为刚结束的这场面试生成教练复盘（服务端缓存，重复打开不重复调 LLM）。 */
+export async function generateReportCoach(): Promise<void> {
+  const id = lastReportId.value
+  if (!id || reportCoachLoading.value) return
+  reportCoachLoading.value = true
+  reportCoachError.value = ''
+  try {
+    reportCoach.value = await api.generateCoach(id)
+  } catch (e) {
+    reportCoachError.value = e instanceof Error ? e.message : '生成失败'
+  } finally {
+    reportCoachLoading.value = false
   }
 }
 

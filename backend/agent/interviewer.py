@@ -51,6 +51,25 @@ PHASE_ORDER = [
 _MAX_TRANSCRIPT_CHARS = 8000
 _MAX_TRANSCRIPT_HEAD = 2000
 
+# Phrases that mark the interviewer wrapping the interview up. When the model
+# produces one of these (e.g. it decides on its own the interview is over),
+# the phase is advanced to CLOSING so the label on the message matches what
+# the interviewer actually said, and the next answer routes to evaluation.
+_CLOSING_MARKERS = (
+    "面试就到这里", "面试到此结束", "面试结束了", "面试结束",
+    "今天的面试", "本次面试", "到这里结束", "到此结束",
+    "感谢你参加", "感谢你的参与", "谢谢你的参与", "谢谢你的时间",
+    "期待你的好消息", "后续会通知", "后续会联系", "保持联系", "期待你的加入",
+    "祝你求职顺利", "祝你面试顺利", "祝你好运", "再见",
+)
+
+
+def _looks_like_closing(text: str) -> bool:
+    """True when the interviewer's message clearly wraps the interview up."""
+    if not text:
+        return False
+    return any(m in text for m in _CLOSING_MARKERS)
+
 
 def _limit_transcript(transcript: str, max_chars: int = _MAX_TRANSCRIPT_CHARS) -> str:
     """Keep the head (opening context) and tail (recent Q&A) within a char budget."""
@@ -339,6 +358,17 @@ class InterviewerAgent:
             if not tool_calls:
                 break
             messages = await self._run_tool_round(messages, accumulated, tools or [], tool_calls)
+
+        # The model may wrap the interview up on its own (long conversations,
+        # or a natural end). Match the phase to what was actually said so the
+        # message label reads 收尾 and the next answer routes to evaluation.
+        if (
+            _looks_like_closing(full_response)
+            and state.phase not in (InterviewPhase.CLOSING, InterviewPhase.EVALUATE)
+        ):
+            logger.info("Interviewer closed the interview during %s — advancing to CLOSING",
+                        state.phase.value)
+            state.phase = InterviewPhase.CLOSING
 
         state.add_message("interviewer", full_response)
 

@@ -86,6 +86,7 @@ def build_interview_step_graph(interviewer, evaluator, ws, save_history):
         await ws.send_text(json.dumps({
             "type": "report",
             "report": report or FALLBACK_REPORT,
+            "id": interview.session_id,
         }))
         return {"ended": True}
 

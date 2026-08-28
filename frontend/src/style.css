@@ -172,6 +172,41 @@ body {
 }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 
+/* ── Phase progress track (阶段进度条) ── */
+.phase-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  background: rgba(22, 22, 24, 0.6);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.phase-step {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  opacity: 0.45;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.phase-step.done {
+  opacity: 0.75;
+  color: var(--text-dim);
+}
+.phase-step.done::before { content: '✓ '; color: var(--gold); }
+.phase-step.current {
+  opacity: 1;
+  color: var(--gold);
+  background: rgba(230, 193, 90, 0.12);
+  border-color: rgba(230, 193, 90, 0.4);
+  font-weight: 600;
+}
+
 /* ── Chat Area ── */
 .chat-container {
   flex: 1;
@@ -451,6 +486,7 @@ body {
   line-height: 1.6;
 }
 .coach-btn { margin-top: 8px; }
+.coach-error { font-size: 12px; color: #ff9aab; margin-bottom: 8px; }
 .history-detail .hd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .history-detail .hd-left { min-width: 0; }
 .history-detail .hd-role { font-size: 18px; font-weight: 700; }
