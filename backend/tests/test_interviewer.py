@@ -26,6 +26,14 @@ class ClosingDetectionTest(unittest.TestCase):
         self.assertTrue(_looks_like_closing("面试到此结束，期待你的好消息。"))
         self.assertTrue(_looks_like_closing("祝你好运，保持联系。"))
 
+    def test_opening_phrases_are_not_closing(self):
+        # 开场白与收尾语词汇重叠 —— 这些绝不能算收尾。
+        self.assertFalse(_looks_like_closing("欢迎参加今天的面试，我是本次面试的面试官。"))
+        self.assertFalse(_looks_like_closing("感谢你参加本次面试，我们开始吧。"))
+        self.assertFalse(_looks_like_closing("本次面试我们将分几个环节进行。"))
+        self.assertFalse(_looks_like_closing("谢谢你的参与，我们先做个自我介绍吧。"))
+        self.assertFalse(_looks_like_closing("期待你的加入，请先介绍一下自己。"))
+
     def test_non_closing_messages_not_detected(self):
         self.assertFalse(_looks_like_closing("你能具体说说这个项目的难点吗？"))
         self.assertFalse(_looks_like_closing("介绍一下你负责的模块。"))
@@ -101,10 +109,30 @@ class ScoringTest(IsolatedAsyncioTestCase):
         agent = InterviewerAgent(FakeLLM(chunks=("今天的面试就到这里，感谢你的参与，", "期待你的好消息。")))
         state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
         state.phase = InterviewPhase.TECH_2
+        # 已有一轮问答（收尾检测只在开场之后生效）
+        state.add_message("interviewer", "你刚才提到了 RAG 项目，能具体讲讲检索链路吗？")
+        state.add_message("candidate", "好的，我们用的是 LangChain……")
         tokens = [t async for t in agent.stream_next(state)]
         self.assertTrue("".join(tokens))
         self.assertEqual(state.phase, InterviewPhase.CLOSING)
         self.assertEqual(state.messages[-1]["phase"], "closing")
+
+    async def test_opening_line_never_triggers_closing(self):
+        # 回归用例：面试官第一句话（"欢迎参加今天的面试…"）绝不能跳到收尾。
+        agent = InterviewerAgent(FakeLLM(chunks=("欢迎参加今天的面试，", "请先做个自我介绍吧。")))
+        state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
+        tokens = [t async for t in agent.stream_next(state)]
+        self.assertEqual("".join(tokens), "欢迎参加今天的面试，请先做个自我介绍吧。")
+        self.assertEqual(state.phase, InterviewPhase.INTRO)
+        self.assertEqual(state.messages[-1]["phase"], "intro")
+
+    async def test_opening_line_with_closing_words_still_safe(self):
+        # 即使开场第一句就含结束语（模型异常输出），也保持 INTRO 不跳阶段。
+        agent = InterviewerAgent(FakeLLM(chunks=("面试就到这里，", "感谢参与。")))
+        state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
+        tokens = [t async for t in agent.stream_next(state)]
+        self.assertEqual(state.phase, InterviewPhase.INTRO)
+        self.assertEqual(state.messages[-1]["phase"], "intro")
 
     async def test_normal_message_keeps_phase(self):
         agent = InterviewerAgent(FakeLLM(chunks=("能具体说说", "这个项目吗？")))

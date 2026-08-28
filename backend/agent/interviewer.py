@@ -55,12 +55,16 @@ _MAX_TRANSCRIPT_HEAD = 2000
 # produces one of these (e.g. it decides on its own the interview is over),
 # the phase is advanced to CLOSING so the label on the message matches what
 # the interviewer actually said, and the next answer routes to evaluation.
+#
+# Only expressions with a clear "ending" meaning belong here. Opening lines
+# share vocabulary with closings ("欢迎参加今天的面试 / 感谢你参加 / 本次面试
+# 将分为…"), so those must NOT be treated as closing signals.
 _CLOSING_MARKERS = (
     "面试就到这里", "面试到此结束", "面试结束了", "面试结束",
-    "今天的面试", "本次面试", "到这里结束", "到此结束",
-    "感谢你参加", "感谢你的参与", "谢谢你的参与", "谢谢你的时间",
-    "期待你的好消息", "后续会通知", "后续会联系", "保持联系", "期待你的加入",
-    "祝你求职顺利", "祝你面试顺利", "祝你好运", "再见",
+    "到这里结束", "到此结束", "就到这里吧", "就到这吧",
+    "期待你的好消息", "后续会通知", "后续会联系", "会尽快通知你",
+    "保持联系", "祝你求职顺利", "祝你面试顺利", "祝你好运", "祝你顺利",
+    "再见",
 )
 
 
@@ -69,6 +73,15 @@ def _looks_like_closing(text: str) -> bool:
     if not text:
         return False
     return any(m in text for m in _CLOSING_MARKERS)
+
+
+def _has_prior_turn(state: InterviewState) -> bool:
+    """True once at least one interviewer message exists.
+
+    Guards closing detection against the very first opening line, which often
+    reads "欢迎参加今天的面试…" — an opening, never a closing.
+    """
+    return any(m.get("role") == "interviewer" for m in state.messages)
 
 
 def _limit_transcript(transcript: str, max_chars: int = _MAX_TRANSCRIPT_CHARS) -> str:
@@ -362,8 +375,10 @@ class InterviewerAgent:
         # The model may wrap the interview up on its own (long conversations,
         # or a natural end). Match the phase to what was actually said so the
         # message label reads 收尾 and the next answer routes to evaluation.
+        # Never triggered by the very first opening line.
         if (
-            _looks_like_closing(full_response)
+            _has_prior_turn(state)
+            and _looks_like_closing(full_response)
             and state.phase not in (InterviewPhase.CLOSING, InterviewPhase.EVALUATE)
         ):
             logger.info("Interviewer closed the interview during %s — advancing to CLOSING",
