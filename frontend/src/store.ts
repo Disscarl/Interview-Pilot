@@ -800,6 +800,11 @@ export function showReport(r: Report): void {
 
 export function closeReport(): void {
   report.value = null
+  // 面试已完成：对话界面已无可操作内容，关闭报告后直接回首页。
+  if (uiState.value === 'done') {
+    resetInterviewState()
+    showView('home')
+  }
 }
 
 // ── History ───────────────────────────────────────────────

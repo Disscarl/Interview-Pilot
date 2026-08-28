@@ -36,7 +36,7 @@ onMounted(() => {
       </div>
       <CoachBox :coach="reportCoach" :loading="reportCoachLoading" @generate="() => generateReportCoach()" />
 
-      <button @click="emit('close')">关闭</button>
+      <button @click="emit('close')">返回首页</button>
     </div>
   </div>
 </template>
