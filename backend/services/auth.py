@@ -8,26 +8,37 @@ import time
 
 from config import settings
 
-_PBKDF2_ITERATIONS = 100_000
+_PBKDF2_ITERATIONS = 600_000
+# Iterations used before R13 — kept so pre-upgrade password hashes still verify.
+_LEGACY_PBKDF2_ITERATIONS = 100_000
 
 
 def hash_password(password: str) -> str:
-    """Hash a password as '<salt_hex>$<hash_hex>' using PBKDF2-HMAC-SHA256."""
+    """Hash a password as '<iterations>$<salt_hex>$<hash_hex>' using PBKDF2-HMAC-SHA256."""
     salt = secrets.token_bytes(16)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERATIONS)
-    return f"{salt.hex()}${dk.hex()}"
+    return f"{_PBKDF2_ITERATIONS}${salt.hex()}${dk.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """Constant-time password verification."""
+    """Constant-time password verification (accepts legacy 2-part hashes)."""
     try:
-        salt_hex, hash_hex = stored.split("$", 1)
-    except ValueError:
+        parts = stored.split("$")
+        if len(parts) == 3:
+            iterations = int(parts[0])
+            salt_hex, hash_hex = parts[1], parts[2]
+        elif len(parts) == 2:
+            # Pre-R13 format: '<salt_hex>$<hash_hex>' (fixed 100k iterations).
+            iterations = _LEGACY_PBKDF2_ITERATIONS
+            salt_hex, hash_hex = parts
+        else:
+            return False
+        dk = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), bytes.fromhex(salt_hex), iterations
+        )
+        return hmac.compare_digest(dk.hex(), hash_hex)
+    except (ValueError, TypeError):
         return False
-    dk = hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), bytes.fromhex(salt_hex), _PBKDF2_ITERATIONS
-    )
-    return hmac.compare_digest(dk.hex(), hash_hex)
 
 
 def _b64url(data: bytes) -> str:
@@ -39,10 +50,16 @@ def _b64url_decode(s: str) -> bytes:
 
 
 def create_token(user_id: int, expires_days: int | None = None) -> str:
-    """Create a signed HS256 JWT with sub=user_id and an exp claim."""
+    """Create a signed HS256 JWT with sub/iat/jti/exp claims."""
     expires_days = expires_days or settings.jwt_expires_days
+    now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
-    payload = {"sub": str(user_id), "exp": int(time.time()) + expires_days * 86400}
+    payload = {
+        "sub": str(user_id),
+        "iat": now,
+        "jti": secrets.token_hex(8),
+        "exp": now + expires_days * 86400,
+    }
     signing_input = (
         _b64url(json.dumps(header, separators=(",", ":")).encode())
         + "."

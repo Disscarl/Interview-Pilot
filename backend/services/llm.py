@@ -40,7 +40,7 @@ class _CallLogger(BaseCallbackHandler):
         try:
             llm_output = getattr(response, "llm_output", None) or {}
             usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
-            total = usage.get("total_tokens") or usage.get("total_tokens", "?")
+            total = usage.get("total_tokens", "?")
             self._log.info("LLM done: tokens=%s", total)
         except Exception:
             pass
