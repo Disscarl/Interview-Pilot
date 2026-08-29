@@ -67,7 +67,7 @@ function enterApp(): void {
   showView('home')
 }
 
-function resetInterviewState(): void {
+function resetInterviewState(keepJd = false): void {
   stopTtsAudio()
   if (recording.value) cancelRecording()
   closedByUser = true
@@ -87,8 +87,13 @@ function resetInterviewState(): void {
   }
   ws = null
   connected.value = false
-  currentJd = null
-  plan.value = null
+  // R11: navigating back home (or closing the report) keeps the generated
+  // interview plan so the user can re-interview immediately; logout clears it
+  // so the next login never sees the previous user's JD/resume.
+  if (!keepJd) {
+    currentJd = null
+    plan.value = null
+  }
   streamId = null
   pendingVoiceMsgId.value = null
   messages.value = []
@@ -583,7 +588,9 @@ export function startInterview(): void {
 }
 
 export function backHome(): void {
-  resetInterviewState()
+  // Keep the generated plan so the user can re-interview the same position
+  // without re-analyzing the JD (R11).
+  resetInterviewState(true)
   showView('home')
 }
 
@@ -801,9 +808,10 @@ export function showReport(r: Report): void {
 
 export function closeReport(): void {
   report.value = null
-  // 面试已完成：对话界面已无可操作内容，关闭报告后直接回首页。
+  // 面试已完成：对话界面已无可操作内容，关闭报告后直接回首页
+  // （保留面试计划，可立即再来一次，R11）。
   if (uiState.value === 'done') {
-    resetInterviewState()
+    resetInterviewState(true)
     showView('home')
   }
 }
@@ -852,9 +860,14 @@ export function backToList(): void {
 
 export async function deleteHistory(id: string): Promise<void> {
   if (!window.confirm('确定删除这条面试记录吗？')) return
-  await api.deleteHistory(id)
-  backToList()
-  await loadHistory()
+  try {
+    await api.deleteHistory(id)
+    backToList()
+    await loadHistory()
+  } catch (e) {
+    // R10: surface the failure instead of an unhandled rejection.
+    historyError.value = e instanceof Error ? e.message : '删除失败'
+  }
 }
 
 /** 重新面试同一岗位：复用历史记录的 JD（旧记录无 JD 时用岗位名回退）。 */

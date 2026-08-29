@@ -21,23 +21,53 @@ export function onUnauthorized(fn: UnauthorizedHandler): void {
   unauthorizedHandler = fn
 }
 
-export async function apiFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+/** Default per-request timeout (ms). Long LLM pipelines pass a larger value. */
+const DEFAULT_TIMEOUT_MS = 120_000
+/** /api/jd/analyze runs up to 4 serial LLM calls — allow 5 minutes. */
+const JD_ANALYZE_TIMEOUT_MS = 300_000
+
+export async function apiFetch(
+  url: string,
+  opts: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
   const headers = new Headers(opts.headers || {})
   headers.set('Authorization', 'Bearer ' + authToken.value)
-  const resp = await fetch(url, { ...opts, headers })
-  if (resp.status === 401) {
-    unauthorizedHandler()
-    throw new Error('登录已过期，请重新登录')
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const resp = await fetch(url, {
+      ...opts,
+      headers,
+      signal: opts.signal ?? controller.signal,
+    })
+    if (resp.status === 401) {
+      unauthorizedHandler()
+      throw new Error('登录已过期，请重新登录')
+    }
+    return resp
+  } finally {
+    clearTimeout(timer)
   }
-  return resp
+}
+
+interface ErrorDetail {
+  msg?: string
+  loc?: unknown
 }
 
 interface ErrorBody {
-  detail?: string
+  detail?: string | ErrorDetail[]
 }
 
 function errMessage(resp: Response, data: ErrorBody, fallback: string): string {
-  return data.detail || fallback
+  const detail = data.detail
+  if (typeof detail === 'string' && detail) return detail
+  // FastAPI 422 validation errors return detail as an array of {loc, msg, type}.
+  if (Array.isArray(detail) && detail.length && typeof detail[0]?.msg === 'string') {
+    return detail[0].msg as string
+  }
+  return fallback
 }
 
 export async function login(username: string, password: string): Promise<string> {
@@ -71,11 +101,15 @@ export interface AnalyzeJdPayload {
 }
 
 export async function analyzeJd(payload: AnalyzeJdPayload): Promise<JdAnalysis> {
-  const resp = await apiFetch('/api/jd/analyze', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
+  const resp = await apiFetch(
+    '/api/jd/analyze',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    JD_ANALYZE_TIMEOUT_MS,
+  )
   const data = (await resp.json()) as JdAnalysis & ErrorBody
   if (!resp.ok) throw new Error(errMessage(resp, data, '解析失败，请重试'))
   return data
