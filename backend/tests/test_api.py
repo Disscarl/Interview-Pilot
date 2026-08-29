@@ -3,6 +3,7 @@
 These exercise the FastAPI app end-to-end against a throwaway temp SQLite DB
 (patched settings + lifespan) with a dummy LLM key — fully offline.
 """
+import base64
 import os
 import tempfile
 from unittest import TestCase
@@ -98,6 +99,32 @@ class ApiTest(TestCase):
             headers={"Authorization": f"Bearer {token}"},
         )
         self.assertEqual(r.status_code, 422)
+
+    def test_resume_extract_truncates_long_text(self):
+        """R3: extract caps text at _MAX_JD_RESUME so analyze never 422s on a
+        long resume (previously an unresolvable dead-end for the user)."""
+        c = self.client
+        token = self._register("resume_long")
+        auth = {"Authorization": f"Bearer {token}"}
+        body_payload = {
+            "filename": "long.pdf",
+            "data_base64": base64.b64encode(b"x").decode(),
+        }
+
+        # Extracted text over the cap → truncated + flagged.
+        with patch.object(main, "extract_text", return_value="字" * 30000):
+            r = c.post("/api/resume/extract", json=body_payload, headers=auth)
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(len(body["text"]), main._MAX_JD_RESUME)
+        self.assertTrue(body["truncated"])
+
+        # Normal-length text passes through untouched.
+        with patch.object(main, "extract_text", return_value="short resume text"):
+            r2 = c.post("/api/resume/extract", json=body_payload, headers=auth)
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.json()["text"], "short resume text")
+        self.assertFalse(r2.json()["truncated"])
 
     def test_history_progress_endpoint(self):
         c = self.client

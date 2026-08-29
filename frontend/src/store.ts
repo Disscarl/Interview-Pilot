@@ -132,9 +132,10 @@ export async function uploadResume(file: File): Promise<void> {
   resumeState.value = ''
   try {
     const dataBase64 = await readFileAsBase64(file)
-    const text = await api.extractResume(file.name, dataBase64)
+    const { text, truncated } = await api.extractResume(file.name, dataBase64)
     resumeText = text
-    resumeName.value = '已读取：' + file.name
+    resumeName.value =
+      '已读取：' + file.name + (truncated ? '（简历较长，已截取前 20000 字）' : '')
     resumeState.value = 'ok'
   } catch (e) {
     resumeText = null

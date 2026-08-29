@@ -81,7 +81,10 @@ export async function analyzeJd(payload: AnalyzeJdPayload): Promise<JdAnalysis> 
   return data
 }
 
-export async function extractResume(filename: string, dataBase64: string): Promise<string> {
+export async function extractResume(
+  filename: string,
+  dataBase64: string,
+): Promise<{ text: string; truncated: boolean }> {
   let resp: Response
   try {
     resp = await apiFetch('/api/resume/extract', {
@@ -92,9 +95,9 @@ export async function extractResume(filename: string, dataBase64: string): Promi
   } catch (e) {
     throw new Error('上传失败：' + (e instanceof Error ? e.message : '网络错误'))
   }
-  const data = (await resp.json()) as { text?: string } & ErrorBody
+  const data = (await resp.json()) as { text?: string; truncated?: boolean } & ErrorBody
   if (!resp.ok) throw new Error('解析失败：' + errMessage(resp, data, filename))
-  return data.text || ''
+  return { text: data.text || '', truncated: !!data.truncated }
 }
 
 export async function ttsPreview(text: string, voice: string, speed: number): Promise<string> {

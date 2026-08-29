@@ -301,7 +301,13 @@ async def extract_resume_endpoint(req: ResumeUpload, user: dict = Depends(get_cu
         text = await asyncio.to_thread(extract_text, req.filename, data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return {"filename": req.filename, "text": text}
+    # Cap the extracted text at the same limit /api/jd/analyze enforces, so a
+    # long resume can never dead-end in a 422 the user cannot fix (R3).
+    truncated = False
+    if len(text) > _MAX_JD_RESUME:
+        text = text[:_MAX_JD_RESUME]
+        truncated = True
+    return {"filename": req.filename, "text": text, "truncated": truncated}
 
 
 @app.post("/api/jd/analyze")
