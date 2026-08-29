@@ -623,19 +623,13 @@ dist_dir = os.path.join(frontend_dir, "dist")
 
 @app.get("/")
 async def root():
-    # Production: serve the built Vite bundle when present.
+    # Serve the built Vite bundle. The legacy single-file fallback and the raw
+    # Vite entry were removed (R5): dist/ is the only supported frontend, so a
+    # missing build is reported instead of serving a stale/partial page.
     dist_index = os.path.join(dist_dir, "index.html")
     if os.path.isfile(dist_index):
         return FileResponse(dist_index)
-    # Pre-build fallback: self-contained single-file app (works without a build).
-    legacy_index = os.path.join(frontend_dir, "legacy.html")
-    if os.path.isfile(legacy_index):
-        return FileResponse(legacy_index)
-    # Dev: raw Vite entry (requires `npm run dev`).
-    dev_index = os.path.join(frontend_dir, "index.html")
-    if os.path.isfile(dev_index):
-        return FileResponse(dev_index)
-    raise HTTPException(status_code=404, detail="frontend not built")
+    raise HTTPException(status_code=404, detail="前端未构建：请先执行 cd frontend && npm run build")
 
 
 # Production: serve compiled assets (JS/CSS) emitted by `vite build`.

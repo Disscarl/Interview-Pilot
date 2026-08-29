@@ -68,7 +68,7 @@ npm run build        # 产出 frontend/dist/
 npm run typecheck    # 可选：TypeScript 类型检查
 ```
 
-后端会在每次请求时探测 `frontend/dist/index.html`：一旦构建产物存在，`/` 即返回新版前端（无需重启）；未构建时回退到 `frontend/legacy.html`（自包含旧版界面）。
+后端会在每次请求时探测 `frontend/dist/index.html`：构建产物存在时 `/` 即返回新版前端（无需重启）；未构建时返回 404 提示，请先执行 `npm run build`。
 
 前端开发调试可另开终端 `cd frontend && npm run dev`（Vite 开发服务器代理 `/api`、`/ws` 到 :8000）。
 
@@ -121,7 +121,7 @@ interview-pilot/
 │   ├── index.html           # Vite 入口
 │   ├── package.json / vite.config.ts / tsconfig.json
 │   ├── src/                 # Vue3 + TS 源码（组件/视图/store/api）
-│   └── legacy.html          # 未构建时的自包含回退页
+│   └── dist/                # 构建产物（gitignore）
 └── .github/workflows/ci.yml # 后端 unittest + 前端构建/类型检查
 ```
 
