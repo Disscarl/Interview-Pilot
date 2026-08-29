@@ -91,7 +91,7 @@ def _user_id_from_token(token: str) -> int | None:
 # ─── Rate limiting + input caps ──────────────────────────
 
 # per-user calls allowed per 60s window
-_RATE_LIMITS = {"jd": 10, "tts": 30, "resume": 30, "stt": 20, "coach": 10}
+_RATE_LIMITS = {"jd": 10, "tts": 30, "resume": 30, "stt": 20, "coach": 10, "ws_create": 10}
 
 # input length/size caps
 _MAX_JD_TEXT = 20000
@@ -151,6 +151,14 @@ def _audio_dir_for(session_id: str) -> str:
 def _write_bytes(path: str, data: bytes) -> None:
     with open(path, "wb") as f:
         f.write(data)
+
+
+def _delete_audio_file(path: str) -> None:
+    """Best-effort removal of a single voice-answer file (e.g. ASR failed)."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def _delete_audio_dir(session_id: str) -> None:
@@ -457,6 +465,15 @@ async def websocket_interview(ws: WebSocket, session_id: str):
             return
 
         if setup.get("action") == "create":
+            # Cap session creation per user so an authenticated client cannot
+            # blow up the in-memory session table (TTL-swept, but unbounded
+            # within a window).
+            if not rate_limiter.allow(f"ws_create:{user_id}", _RATE_LIMITS["ws_create"]):
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "content": "请求过于频繁，请稍后再试",
+                }))
+                return
             jd = setup.get("jd")  # optional {"profile": ..., "plan": ...}
 
             # Resolve a human-readable role title for the interviewer prompt
@@ -544,10 +561,13 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                 await asyncio.to_thread(_write_bytes, audio_path, wav)
                 audio_url = f"/api/audio/{session_id}/{message_id}"
 
-                # Transcribe (server-side split + iFlytek)
+                # Transcribe (server-side split + iFlytek). On any failure the
+                # just-written WAV would be orphaned forever (cleanup only runs
+                # at startup) — remove it so failed attempts leave no residue.
                 try:
                     result = await transcribe_wav(wav)
                 except AsrNotConfigured as e:
+                    await asyncio.to_thread(_delete_audio_file, audio_path)
                     await ws.send_text(json.dumps({
                         "type": "candidate_voice", "message_id": message_id,
                         "text": "", "audio_url": audio_url,
@@ -555,6 +575,7 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     }))
                     continue
                 except Exception as e:
+                    await asyncio.to_thread(_delete_audio_file, audio_path)
                     await ws.send_text(json.dumps({
                         "type": "candidate_voice", "message_id": message_id,
                         "text": "", "audio_url": audio_url,
@@ -566,6 +587,7 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                 text = (result.get("text") or "").strip()
                 duration_sec = result.get("duration_sec") or round(duration_ms / 1000, 1)
                 if not text:
+                    await asyncio.to_thread(_delete_audio_file, audio_path)
                     await ws.send_text(json.dumps({
                         "type": "candidate_voice", "message_id": message_id,
                         "text": "", "audio_url": audio_url,

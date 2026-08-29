@@ -296,27 +296,6 @@ class InterviewerAgent:
                 messages.append(HumanMessage(content=msg["content"]))
         return messages
 
-    async def generate_next(self, state: InterviewState) -> str:
-        """Generate the interviewer's next message based on the current state."""
-        # Check if we need to transition phases
-        if self.should_transition(state):
-            old_phase = state.phase
-            state.phase = self._next_phase(old_phase)
-
-        score_info = await self._score_last_answer(state)
-        messages = self._build_history(state, score_info)
-        candidate_answer = state.get_last_answer() or "（面试开始，请面试官先发言）"
-
-        # Add the current prompt
-        messages.append(HumanMessage(content=f"候选人的最新回答:\n{candidate_answer}\n\n请根据你的追问规则，给出下一个面试官发言。"))
-
-        response = await self.llm.ainvoke(messages)
-        content = response.content
-
-        # Record the interviewer message
-        state.add_message("interviewer", content)
-        return content
-
     async def generate_next_stream(self, state: InterviewState) -> AsyncGenerator[str, None]:
         """Score the last answer, then stream the next message (convenience wrapper)."""
         score_info = await self._score_last_answer(state)
@@ -366,7 +345,9 @@ class InterviewerAgent:
                 if token:
                     round_text += token
                     yield token
-            full_response = round_text
+            # Accumulate across tool rounds: a model may emit text in the same
+            # round as a tool call, and that text must not be lost.
+            full_response += round_text
             tool_calls = (getattr(accumulated, "tool_calls", None) or []) if accumulated is not None else []
             if not tool_calls:
                 break

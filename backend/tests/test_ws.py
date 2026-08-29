@@ -3,6 +3,7 @@
 The interviewer/evaluator LLM is replaced with an offline fake, so no real
 DeepSeek/讯飞 calls happen. DB/audio/tts paths are patched to a temp dir.
 """
+import base64
 import json
 import os
 import tempfile
@@ -167,6 +168,46 @@ class WsTest(TestCase):
             ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
             got = _drain(ws, {"stream_end"})
             self.assertEqual(got[0]["type"], "created")
+
+    def test_ws_create_rate_limited(self):
+        """R6: session creation is capped per user (in-memory session table)."""
+        token = self._register("frank")
+        limit = main._RATE_LIMITS["ws_create"]
+        for i in range(limit):
+            with self.client.websocket_connect(f"/ws/sess_rl_{i}?token={token}") as ws:
+                ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
+                got = _drain(ws, {"stream_end"})
+                self.assertEqual(got[0]["type"], "created")
+
+        # One more create within the 60s window → rate-limited error.
+        with self.client.websocket_connect(f"/ws/sess_rl_over?token={token}") as ws:
+            ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
+            m = ws.receive_json()
+            self.assertEqual(m["type"], "error")
+            self.assertIn("频繁", m["content"])
+
+    def test_failed_asr_cleans_audio_file(self):
+        """R9: a WAV written before transcription must be removed when ASR fails,
+        so failed attempts leave no orphaned audio files on disk."""
+        token = self._register("asr_fail")
+        sid = "sess_asrfail_1"
+        wav_b64 = base64.b64encode(b"fake wav bytes").decode()
+        with patch.object(main, "transcribe_wav", side_effect=RuntimeError("boom")):
+            with self.client.websocket_connect(f"/ws/{sid}?token={token}") as ws:
+                ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
+                _drain(ws, {"stream_end"})
+                ws.send_json({
+                    "action": "answer_audio",
+                    "audio_base64": wav_b64,
+                    "duration_ms": 1000,
+                })
+                m = ws.receive_json()
+                self.assertEqual(m["type"], "candidate_voice")
+                self.assertIn("error", m)
+
+        audio_dir = os.path.join(main.settings.audio_dir, sid)
+        self.assertTrue(os.path.isdir(audio_dir))
+        self.assertEqual(os.listdir(audio_dir), [], "failed ASR must not leave audio files")
 
 
 if __name__ == "__main__":

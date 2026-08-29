@@ -114,6 +114,42 @@ class ToolLoopTest(IsolatedAsyncioTestCase):
         tool_msgs = [m for m in fake.calls[1] if isinstance(m, ToolMessage)]
         self.assertIn("未知工具", tool_msgs[0].content)
 
+    async def test_tool_round_text_is_kept(self):
+        """R8: text emitted in the same round as a tool call must survive the
+        tool loop (full_response accumulates across rounds)."""
+        fake = FakeMultiRoundToolLLM()
+        agent = InterviewerAgent(llm=fake)
+        state = _state_with_resume()
+        tokens = [t async for t in agent.stream_next(state, None, tools=build_interview_tools(state))]
+
+        self.assertEqual("".join(tokens), "我查一下简历。继续追问。")
+        self.assertEqual(fake.calls, 2)  # tool round (with text) + content round
+        self.assertEqual(state.messages[-1]["content"], "我查一下简历。继续追问。")
+
+
+class FakeMultiRoundToolLLM:
+    """Offline LLM: round 1 emits text + a tool call, round 2 streams content."""
+
+    def __init__(self, content=("继续", "追问。")):
+        self._content = content
+        self.calls = 0
+
+    def bind_tools(self, tools):
+        return self
+
+    async def astream(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            yield AIMessageChunk(
+                content="我查一下简历。",
+                tool_call_chunks=[
+                    {"name": "search_candidate_info", "args": '{"query": "UE"}', "id": "call_1", "index": 0}
+                ],
+            )
+        else:
+            for c in self._content:
+                yield AIMessageChunk(content=c)
+
 
 if __name__ == "__main__":
     unittest.main()
