@@ -115,7 +115,6 @@ interview-pilot/
 │   │   └── history.py       # 历史持久化（SQLite）
 │   ├── tests/               # unittest 测试（离线、确定性）
 │   └── data/
-│       ├── scenarios/       # 面试场景
 │       ├── interviews.db    # 历史数据库（gitignore）
 │       └── audio/           # 语音回答音频（gitignore）
 ├── frontend/

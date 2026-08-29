@@ -1,4 +1,4 @@
-"""HTTP-layer tests: auth endpoints, scenario path validation, guards.
+"""HTTP-layer tests: auth endpoints, input caps, guards.
 
 These exercise the FastAPI app end-to-end against a throwaway temp SQLite DB
 (patched settings + lifespan) with a dummy LLM key — fully offline.
@@ -69,19 +69,6 @@ class ApiTest(TestCase):
         self.assertEqual(r5.status_code, 200)
         self.assertEqual(r5.json()["username"], "alice")
         self.assertEqual(c.get("/api/auth/me").status_code, 401)
-
-    def test_scenario_path_traversal_blocked(self):
-        c = self.client
-        # unauthenticated → 401 (endpoint now requires login)
-        self.assertEqual(c.get("/api/scenarios/%2e%2e%5c%2e%2e%5cconfig").status_code, 401)
-
-        token = self._register("bob")
-        auth = {"Authorization": f"Bearer {token}"}
-        # traversal id → 400 (whitelist rejects)
-        r2 = c.get("/api/scenarios/..%5C..%5Cconfig", headers=auth)
-        self.assertEqual(r2.status_code, 400)
-        # valid-shaped but missing id → 404
-        self.assertEqual(c.get("/api/scenarios/does_not_exist", headers=auth).status_code, 404)
 
     def test_auth_ip_rate_limit(self):
         c = self.client

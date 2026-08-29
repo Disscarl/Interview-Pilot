@@ -243,39 +243,6 @@ async def me(user: dict = Depends(get_current_user)):
 
 # ─── REST endpoints ──────────────────────────────────────
 
-@app.get("/api/scenarios")
-async def list_scenarios(user: dict = Depends(get_current_user)):
-    """Return available interview scenarios."""
-    import os
-    import glob
-
-    scenario_dir = os.path.join(os.path.dirname(__file__), "data", "scenarios")
-    scenarios = []
-    for path in glob.glob(os.path.join(scenario_dir, "*.json")):
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            scenarios.append({
-                "id": data["id"],
-                "title": data["title"],
-                "description": data.get("description", ""),
-                "tags": data.get("tags", []),
-            })
-    return {"scenarios": scenarios}
-
-
-@app.get("/api/scenarios/{scenario_id}")
-async def get_scenario(scenario_id: str, user: dict = Depends(get_current_user)):
-    """Get a specific scenario config."""
-    if not _ID_RE.match(scenario_id):
-        raise HTTPException(status_code=400, detail="非法路径")
-    import os
-    path = os.path.join(os.path.dirname(__file__), "data", "scenarios", f"{scenario_id}.json")
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Scenario not found")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 class JDRequest(BaseModel):
     text: str = ""
     company: str = ""
@@ -478,7 +445,7 @@ async def websocket_interview(ws: WebSocket, session_id: str):
 
     ended = False
     try:
-        # First message: setup (scenario selection or create new)
+        # First message: setup (create a new interview session)
         raw = await ws.receive_text()
         if len(raw) > _MAX_SETUP_BYTES:
             await ws.send_text(json.dumps({"type": "error", "content": "消息过大"}))
@@ -490,30 +457,18 @@ async def websocket_interview(ws: WebSocket, session_id: str):
             return
 
         if setup.get("action") == "create":
-            scenario_id = setup.get("scenario_id") or ""
-            if scenario_id and not _ID_RE.match(scenario_id):
-                scenario_id = ""
             jd = setup.get("jd")  # optional {"profile": ..., "plan": ...}
 
-            # Resolve a human-readable role title for the interviewer prompt.
-            # Priority: JD role title > scenario title > generic fallback.
+            # Resolve a human-readable role title for the interviewer prompt
+            # (JD role title, or a generic fallback).
             role_title = ""
             if isinstance(jd, dict):
                 role_title = (jd.get("profile") or {}).get("role_title") or ""
-            if not role_title and scenario_id:
-                try:
-                    scenario_path = os.path.join(
-                        os.path.dirname(__file__), "data", "scenarios", f"{scenario_id}.json"
-                    )
-                    with open(scenario_path, "r", encoding="utf-8") as f:
-                        role_title = json.load(f).get("title", "")
-                except Exception:
-                    role_title = ""
             if not role_title:
                 role_title = "目标岗位"
 
             state = await session_manager.create(
-                session_id, scenario_id or "generic", role_title, jd, user_id=user_id
+                session_id, "generic", role_title, jd, user_id=user_id
             )
             if state is None:
                 # Session exists but belongs to a different user — refuse.
@@ -533,7 +488,6 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                 await ws.send_text(json.dumps({
                     "type": "created",
                     "session_id": session_id,
-                    "scenario_id": scenario_id,
                 }))
                 # Generate and stream the interviewer's first message (graph step).
                 await step_graph.ainvoke({"interview": state})
