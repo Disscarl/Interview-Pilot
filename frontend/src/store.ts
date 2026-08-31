@@ -69,12 +69,16 @@ function enterApp(): void {
 
 function resetInterviewState(keepJd = false): void {
   stopTtsAudio()
+  // L13: invalidate any in-flight getUserMedia() — a permission grant that
+  // resolves after the user left must be stopped, not left recording.
+  captureGeneration++
   if (recording.value) cancelRecording()
   closedByUser = true
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  stopHeartbeat()
   clearCreateRetry()
   createSentForSocket = null
   if (ws) {
@@ -297,19 +301,30 @@ let ws: WebSocket | null = null
 let closedByUser = false
 let reconnectAttempts = 0
 let reconnectTimer: number | null = null
+let heartbeatTimer: number | null = null
+let lastPongTs = 0
 let shouldResume = false
 let streamId: number | null = null
 let createRetryTimer: number | null = null
 let createSentForSocket: WebSocket | null = null
 const pendingVoiceMsgId = ref<number | null>(null)
 let nextMsgId = 1
+/** Bumped whenever the interview UI is torn down — invalidates any
+ * in-flight getUserMedia() so a late permission grant is stopped (L13). */
+let captureGeneration = 0
+
+const HEARTBEAT_INTERVAL_MS = 15_000
+const HEARTBEAT_TIMEOUT_MS = 35_000
 
 export const streaming = ref(false)
 export const recording = ref(false)
 
 export const micDisabled = () => uiState.value !== 'active' || pendingVoiceMsgId.value !== null
 export const sendDisabled = () =>
-  uiState.value !== 'active' || !connected.value || streaming.value
+  uiState.value !== 'active' ||
+  !connected.value ||
+  streaming.value ||
+  pendingVoiceMsgId.value !== null // L15: no text while a voice answer is pending
 export const endDisabled = () => uiState.value !== 'active' || !connected.value
 export const inputDisabled = () => uiState.value !== 'active'
 
@@ -393,6 +408,39 @@ function endStream(phase?: string): void {
   if (uiState.value !== 'done') setUIState('active')
 }
 
+function startHeartbeat(): void {
+  // L12: detect half-open connections (laptop sleep, network switch) — the
+  // server already answers {action:'ping'} with pong; if none arrives in time
+  // we force-close to trigger the existing reconnect flow instead of silently
+  // losing the user's answers.
+  stopHeartbeat()
+  lastPongTs = Date.now()
+  heartbeatTimer = window.setInterval(() => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    if (Date.now() - lastPongTs > HEARTBEAT_TIMEOUT_MS) {
+      showInputHint('连接已断开，正在重连…', true)
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    try {
+      ws.send(JSON.stringify({ action: 'ping' }))
+    } catch {
+      /* ignore */
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer !== null) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
+}
+
 function connectWs(): void {
   if (!sessionId) {
     sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
@@ -405,6 +453,7 @@ function connectWs(): void {
   ws.onopen = () => {
     connected.value = true
     reconnectAttempts = 0
+    startHeartbeat()
     // Fresh socket: allow one create message. Do NOT clear the retry timer
     // here — startInterview's sendCreate relies on it to fire after open.
     createSentForSocket = null
@@ -426,6 +475,7 @@ function connectWs(): void {
 
   ws.onclose = () => {
     connected.value = false
+    stopHeartbeat()
     clearCreateRetry()
     if (!closedByUser) scheduleReconnect()
   }
@@ -471,6 +521,10 @@ function handleWsMessage(data: WsIncoming): void {
       handleCandidateVoice(data)
       break
 
+    case 'pong':
+      lastPongTs = Date.now()
+      break
+
     case 'interview_end':
       stopTtsAudio()
       removeTyping()
@@ -493,6 +547,13 @@ function handleWsMessage(data: WsIncoming): void {
 
     case 'error':
       removeTyping()
+      // L14: a mid-stream failure left a partial message on screen that the
+      // server never committed — drop it so client and server state match.
+      if (streamId !== null) {
+        messages.value = messages.value.filter((m) => m.id !== streamId)
+        streamId = null
+        streaming.value = false
+      }
       addMessage('interviewer', '⚠️ 出错了: ' + data.content)
       setUIState('active')
       break
@@ -577,7 +638,11 @@ export function startInterview(): void {
   }
   clearInputHint()
   setPhaseBadge(null)
-  if (!connected.value || !ws || ws.readyState !== WebSocket.OPEN) connectWs()
+  // L16: reuse an OPEN or CONNECTING socket — creating a second one while the
+  // first is still connecting duplicates the connection and races sendCreate.
+  if (!ws || (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING)) {
+    connectWs()
+  }
   setUIState('active')
   messages.value = []
   streamId = null
@@ -663,11 +728,20 @@ async function startRecording(): Promise<void> {
     return
   }
   recordingStarting = true
+  const gen = captureGeneration
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
   } catch {
     recordingStarting = false
     showInputHint('无法访问麦克风，请检查浏览器权限', true)
+    return
+  }
+  // L13: the user may have navigated away while the permission prompt was
+  // pending — stop the just-acquired stream immediately if so.
+  if (gen !== captureGeneration) {
+    mediaStream.getTracks().forEach((t) => t.stop())
+    mediaStream = null
+    recordingStarting = false
     return
   }
   const Ctx: typeof AudioContext =

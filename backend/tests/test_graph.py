@@ -108,6 +108,36 @@ class GraphStepTest(IsolatedAsyncioTestCase):
         self.assertTrue(result.get("ended"))
         self.assertIn("report", [m["type"] for m in self.ws.sent])
 
+    async def test_generate_failure_sends_error_and_commits_nothing(self):
+        """L14: a mid-stream LLM failure must not hang the client or commit a
+        partial message to the interview state."""
+
+        class FailingStreamLLM:
+            async def ainvoke(self, messages):
+                return SimpleNamespace(content=json.dumps({"score": 3, "weakness_hint": "x"}))
+
+            async def astream(self, messages):
+                yield SimpleNamespace(content="半句话")
+                raise RuntimeError("boom")
+
+        llm = FailingStreamLLM()
+        interviewer = InterviewerAgent(llm=llm)
+        evaluator = EvaluatorAgent(llm=llm)
+        ws = FakeWS()
+        graph = build_interview_step_graph(
+            interviewer, evaluator, ws=ws, save_history=lambda st, rep: None
+        )
+        state = self._state()
+        state.add_message("candidate", "我的回答")
+
+        result = await graph.ainvoke({"interview": state})
+        self.assertFalse(result.get("ended"))
+        types = [m["type"] for m in ws.sent]
+        self.assertIn("error", types)
+        self.assertNotIn("stream_end", types)
+        # The partial message was never committed to the interview state.
+        self.assertEqual([m for m in state.messages if m["role"] == "interviewer"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,8 +65,23 @@ def build_interview_step_graph(interviewer, evaluator, ws, save_history):
         score_info = state.get("score_info")
         tools = build_interview_tools(interview)
         await ws.send_text(json.dumps({"type": "thinking", "content": True}))
-        async for token in interviewer.stream_next(interview, score_info, tools=tools):
-            await ws.send_text(json.dumps({"type": "stream_token", "content": token}))
+        try:
+            async for token in interviewer.stream_next(interview, score_info, tools=tools):
+                await ws.send_text(json.dumps({"type": "stream_token", "content": token}))
+        except Exception as e:
+            # L14: a mid-stream LLM failure must not leave the client hanging on
+            # a half question while the server state stays clean (stream_next
+            # only commits the message after streaming finishes). Send a
+            # terminal error event instead.
+            logger.error("Generate failed: %s", e, exc_info=True)
+            try:
+                await ws.send_text(json.dumps({
+                    "type": "error",
+                    "content": "生成回答失败，请重试",
+                }))
+            except Exception:
+                pass
+            return {"ended": False}
         await ws.send_text(json.dumps({"type": "stream_end", "phase": interview.phase.value}))
         return {"ended": False}
 

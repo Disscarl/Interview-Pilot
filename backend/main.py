@@ -141,6 +141,18 @@ async def save_history(state, report):
         logger.warning("Failed to save history: %s", e)
 
 
+async def run_interview_step(session_id: str, step_graph, payload: dict) -> dict:
+    """Run one graph step under the session's lock (L10).
+
+    Two connections to the same session (two tabs, or a reconnect racing the
+    old socket) would otherwise run graph steps concurrently and mutate the
+    shared InterviewState — the lock serializes them.
+    """
+    lock = await session_manager.get_lock(session_id)
+    async with lock:
+        return await step_graph.ainvoke(payload)
+
+
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -518,7 +530,7 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     "session_id": session_id,
                 }))
                 # Generate and stream the interviewer's first message (graph step).
-                await step_graph.ainvoke({"interview": state})
+                await run_interview_step(session_id, step_graph, {"interview": state})
         else:
             await ws.send_text(json.dumps({"type": "error", "content": "First message must be 'create'"}))
             return
@@ -542,7 +554,7 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     }))
                     continue
                 state.add_message("candidate", candidate_text)
-                result = await step_graph.ainvoke({"interview": state})
+                result = await run_interview_step(session_id, step_graph, {"interview": state})
                 if result.get("ended"):
                     ended = True
                     break
@@ -611,13 +623,13 @@ async def websocket_interview(ws: WebSocket, session_id: str):
                     "type": "candidate_voice", "message_id": message_id,
                     "text": text, "audio_url": audio_url, "audio_duration": duration_sec,
                 }))
-                result = await step_graph.ainvoke({"interview": state})
+                result = await run_interview_step(session_id, step_graph, {"interview": state})
                 if result.get("ended"):
                     ended = True
                     break
 
             elif action == "end":
-                await step_graph.ainvoke({
+                await run_interview_step(session_id, step_graph, {
                     "interview": state,
                     "force_evaluate": True,
                     "end_content": "面试已结束，正在生成评估报告...",

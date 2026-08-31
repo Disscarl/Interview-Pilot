@@ -154,6 +154,7 @@ export type WsIncoming =
   | { type: 'stream_token'; content: string }
   | { type: 'stream_end'; phase?: string }
   | { type: 'candidate_voice'; text?: string; error?: string; audio_url?: string }
+  | { type: 'pong' }
   | { type: 'interview_end'; content: string }
   | { type: 'report'; report: Report; id?: string }
   | { type: 'error'; content: string }

@@ -3,6 +3,8 @@ import shutil
 import tempfile
 from unittest import IsolatedAsyncioTestCase
 
+import aiosqlite
+
 from services.history import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     save_interview, list_interviews, get_interview, delete_interview, list_progress,
@@ -20,6 +22,13 @@ class HistoryTest(IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    async def test_wal_enabled(self):
+        """L11: WAL is set so concurrent readers/writers don't lock."""
+        async with aiosqlite.connect(os.path.join(self.tmp, "test.db")) as db:
+            cur = await db.execute("PRAGMA journal_mode")
+            mode = (await cur.fetchone())[0]
+        self.assertEqual(mode.lower(), "wal")
 
     async def test_user_crud(self):
         uid = await create_user("alice", hash_password("pw1234"))

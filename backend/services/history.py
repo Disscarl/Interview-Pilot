@@ -2,10 +2,26 @@
 import json
 import sqlite3
 import time
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 import aiosqlite
 
 _DB_PATH = None
+
+
+@asynccontextmanager
+async def _db() -> AsyncIterator[aiosqlite.Connection]:
+    """Open a connection with row factory + busy_timeout (L11).
+
+    Connections are short-lived here; busy_timeout must be set per connection
+    so concurrent writes wait (up to 5s) instead of failing with
+    ``database is locked``. WAL is enabled once in init_db (persistent).
+    """
+    async with aiosqlite.connect(_DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        await db.execute("PRAGMA busy_timeout=5000")
+        yield db
 
 
 def _row_to_dict(row) -> dict:
@@ -17,6 +33,10 @@ async def init_db(path: str):
     global _DB_PATH
     _DB_PATH = path
     async with aiosqlite.connect(path) as db:
+        # L11: WAL allows concurrent readers + one writer; NORMAL avoids
+        # fsync per commit. Both are database-persistent settings.
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +93,7 @@ async def init_db(path: str):
 async def create_user(username: str, password_hash: str) -> int | None:
     """Create a user; returns the new id, or None if the username is taken."""
     try:
-        async with aiosqlite.connect(_DB_PATH) as db:
+        async with _db() as db:
             cursor = await db.execute(
                 "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
                 (username, password_hash, time.strftime("%Y-%m-%d %H:%M:%S")),
@@ -85,16 +105,14 @@ async def create_user(username: str, password_hash: str) -> int | None:
 
 
 async def get_user_by_username(username: str) -> dict | None:
-    async with aiosqlite.connect(_DB_PATH) as db:
-        db.row_factory = sqlite3.Row
+    async with _db() as db:
         cursor = await db.execute("SELECT * FROM users WHERE username = ?", (username,))
         row = await cursor.fetchone()
     return _row_to_dict(row) if row else None
 
 
 async def get_user_by_id(user_id: int) -> dict | None:
-    async with aiosqlite.connect(_DB_PATH) as db:
-        db.row_factory = sqlite3.Row
+    async with _db() as db:
         cursor = await db.execute("SELECT * FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
     return _row_to_dict(row) if row else None
@@ -113,7 +131,7 @@ async def save_interview(session_id: str, role_title: str, company_name: str,
     kept so the user can re-interview the same position later.
     """
     report = report or {}
-    async with aiosqlite.connect(_DB_PATH) as db:
+    async with _db() as db:
         await db.execute(
             """
             INSERT OR REPLACE INTO interviews
@@ -138,8 +156,7 @@ async def save_interview(session_id: str, role_title: str, company_name: str,
 
 async def list_interviews(user_id: int) -> list:
     """Return summary rows for a user's history list (newest first)."""
-    async with aiosqlite.connect(_DB_PATH) as db:
-        db.row_factory = sqlite3.Row
+    async with _db() as db:
         cursor = await db.execute(
             "SELECT id, role_title, company_name, created_at, overall_score, summary "
             "FROM interviews WHERE user_id = ? ORDER BY created_at DESC",
@@ -151,8 +168,7 @@ async def list_interviews(user_id: int) -> list:
 
 async def get_interview(interview_id: str, user_id: int) -> dict | None:
     """Return a full history record owned by the user, or None."""
-    async with aiosqlite.connect(_DB_PATH) as db:
-        db.row_factory = sqlite3.Row
+    async with _db() as db:
         cursor = await db.execute(
             "SELECT * FROM interviews WHERE id = ? AND user_id = ?", (interview_id, user_id)
         )
@@ -169,7 +185,7 @@ async def get_interview(interview_id: str, user_id: int) -> dict | None:
 
 async def save_coach(interview_id: str, user_id: int, coach: dict) -> bool:
     """Persist a generated coach debrief onto an owned history record."""
-    async with aiosqlite.connect(_DB_PATH) as db:
+    async with _db() as db:
         cursor = await db.execute(
             "UPDATE interviews SET coach = ? WHERE id = ? AND user_id = ?",
             (json.dumps(coach, ensure_ascii=False), interview_id, user_id),
@@ -180,7 +196,7 @@ async def save_coach(interview_id: str, user_id: int, coach: dict) -> bool:
 
 async def delete_interview(interview_id: str, user_id: int) -> bool:
     """Delete a user's history record; returns True if a row was removed."""
-    async with aiosqlite.connect(_DB_PATH) as db:
+    async with _db() as db:
         cursor = await db.execute(
             "DELETE FROM interviews WHERE id = ? AND user_id = ?", (interview_id, user_id)
         )
@@ -190,7 +206,7 @@ async def delete_interview(interview_id: str, user_id: int) -> bool:
 
 async def list_all_session_ids() -> set:
     """Return every interview id (all users) — used for orphan-audio cleanup."""
-    async with aiosqlite.connect(_DB_PATH) as db:
+    async with _db() as db:
         cursor = await db.execute("SELECT id FROM interviews")
         rows = await cursor.fetchall()
     return {r[0] for r in rows}
@@ -203,8 +219,7 @@ async def list_progress(user_id: int) -> list:
         {"id", "created_at", "overall_score", "dimension_scores"}  # oldest first
     ]}] — one entry per distinct position, attempts sorted by time.
     """
-    async with aiosqlite.connect(_DB_PATH) as db:
-        db.row_factory = sqlite3.Row
+    async with _db() as db:
         cursor = await db.execute(
             "SELECT id, role_title, company_name, created_at, overall_score, report "
             "FROM interviews WHERE user_id = ? ORDER BY created_at ASC",
