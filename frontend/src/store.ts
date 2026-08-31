@@ -276,7 +276,10 @@ export function playVoiceUrl(url: string): HTMLAudioElement | null {
 export async function playMessageTts(text: string): Promise<void> {
   if (!text || !text.trim()) return
   try {
-    const b64 = await api.ttsPreview(text, ttsVoice.value, Number(ttsSpeed.value))
+    // C2: the TTS endpoint caps text at 500 chars — clip long messages so
+    // 朗读 works for every interviewer message.
+    const clipped = text.length > 500 ? text.slice(0, 500) : text
+    const b64 = await api.ttsPreview(clipped, ttsVoice.value, Number(ttsSpeed.value))
     playTtsBase64(b64)
   } catch (e) {
     showInputHint('语音合成失败：' + (e instanceof Error ? e.message : ''), true)
@@ -501,6 +504,11 @@ function connectWs(): void {
 }
 
 function handleWsMessage(data: WsIncoming): void {
+  // C1: any message proves the connection is alive — refresh the heartbeat
+  // timestamp so long streaming turns (the server streams tokens without
+  // reading pings) never trip the timeout. Only a fully silent connection
+  // (no tokens, no pong) can time out.
+  lastPongTs = Date.now()
   switch (data.type) {
     case 'created':
       setPhaseBadge('intro')

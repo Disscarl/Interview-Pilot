@@ -102,8 +102,10 @@ _MAX_RESUME_BYTES = 10 * 1024 * 1024
 _MAX_AUDIO_BYTES = 15 * 1024 * 1024
 _MAX_ANSWER_TEXT = 5000
 _MAX_SETUP_BYTES = 128 * 1024
-# WS main-loop frames: reject oversized JSON before parsing (L29).
-_MAX_WS_FRAME_BYTES = 2 * 1024 * 1024
+# WS main-loop frames: reject oversized JSON before parsing (L29). Must cover
+# the largest legal frame — answer_audio's base64 is ~4/3 × _MAX_AUDIO_BYTES
+# (≈20MB for a 15MB upload), so the cap is derived from it (C3).
+_MAX_WS_FRAME_BYTES = (_MAX_AUDIO_BYTES * 4 // 3) + 256 * 1024
 
 
 def _enforce_rate_limit(bucket: str, user_id: int) -> None:

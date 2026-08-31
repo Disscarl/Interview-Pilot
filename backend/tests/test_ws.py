@@ -209,6 +209,30 @@ class WsTest(TestCase):
         self.assertTrue(os.path.isdir(audio_dir))
         self.assertEqual(os.listdir(audio_dir), [], "failed ASR must not leave audio files")
 
+    def test_ws_frame_cap_covers_legal_audio_uploads(self):
+        """C3: the main-loop frame cap must never reject a legal audio upload —
+        answer_audio's base64 (~4/3 × file size) is the largest legal frame."""
+        self.assertGreaterEqual(
+            main._MAX_WS_FRAME_BYTES, main._MAX_AUDIO_BYTES * 4 // 3,
+        )
+
+        # A ~4MB base64 payload — larger than the old 2MB cap, still legal.
+        token = self._register("big_audio")
+        sid = "sess_big_audio_1"
+        wav_b64 = base64.b64encode(b"x" * (3 * 1024 * 1024)).decode()
+        with patch.object(main, "transcribe_wav", side_effect=RuntimeError("boom")):
+            with self.client.websocket_connect(f"/ws/{sid}?token={token}") as ws:
+                ws.send_json({"action": "create", "jd": {"profile": {"role_title": "测试"}}})
+                _drain(ws, {"stream_end"})
+                ws.send_json({
+                    "action": "answer_audio",
+                    "audio_base64": wav_b64,
+                    "duration_ms": 1000,
+                })
+                m = ws.receive_json()
+                self.assertEqual(m["type"], "candidate_voice")
+                self.assertIn("error", m)  # ASR fails (mocked) — NOT 消息过大
+
 
 if __name__ == "__main__":
     import unittest
