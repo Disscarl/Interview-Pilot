@@ -2,6 +2,8 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 # Code targets LangChain 1.x / langchain-core 1.5 APIs (see agent/graph.py).
 langchain>=1.2,<2
+# Direct import across agent/ — declared explicitly (L25).
+langchain-core>=1.5,<2
 langchain-openai>=1.0,<2
 langchain-anthropic>=1.0,<2
 # Direct import in agent/graph.py — declared explicitly, not via langchain's

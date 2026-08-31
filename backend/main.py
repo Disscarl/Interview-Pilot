@@ -102,6 +102,8 @@ _MAX_RESUME_BYTES = 10 * 1024 * 1024
 _MAX_AUDIO_BYTES = 15 * 1024 * 1024
 _MAX_ANSWER_TEXT = 5000
 _MAX_SETUP_BYTES = 128 * 1024
+# WS main-loop frames: reject oversized JSON before parsing (L29).
+_MAX_WS_FRAME_BYTES = 2 * 1024 * 1024
 
 
 def _enforce_rate_limit(bucket: str, user_id: int) -> None:
@@ -538,6 +540,9 @@ async def websocket_interview(ws: WebSocket, session_id: str):
         # Main loop: receive candidate answers, send interviewer responses
         while True:
             raw = await ws.receive_text()
+            if len(raw) > _MAX_WS_FRAME_BYTES:
+                await ws.send_text(json.dumps({"type": "error", "content": "消息过大"}))
+                continue
             try:
                 data = json.loads(raw)
             except Exception:
@@ -661,7 +666,6 @@ async def websocket_interview(ws: WebSocket, session_id: str):
 
 # ─── Static files (frontend) ──────────────────────────────
 
-import os
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 dist_dir = os.path.join(frontend_dir, "dist")
 

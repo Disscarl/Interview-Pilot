@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.pytest_cache/
 .venv/
 venv/
 env/
@@ -10,11 +11,9 @@ env/
 .env
 backend/.env
 
-# Runtime data
-backend/data/interviews.db
-backend/data/interviews.db-*
-backend/data/audio/
-backend/data/tts_cache/
+# Runtime data (L27: whole directory — DB/audio/tts/scenarios are all runtime)
+backend/data/
+!backend/data/.gitkeep
 
 # Temp / scratch scripts
 _*.py

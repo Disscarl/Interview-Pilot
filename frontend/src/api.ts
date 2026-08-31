@@ -35,17 +35,24 @@ export async function apiFetch(
   headers.set('Authorization', 'Bearer ' + authToken.value)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // L18: combine the caller's signal (if any) with our timeout signal so the
+  // timeout is not silently disabled when opts.signal is provided.
+  const signal =
+    opts.signal && typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([opts.signal, controller.signal])
+      : opts.signal ?? controller.signal
   try {
-    const resp = await fetch(url, {
-      ...opts,
-      headers,
-      signal: opts.signal ?? controller.signal,
-    })
+    const resp = await fetch(url, { ...opts, headers, signal })
     if (resp.status === 401) {
       unauthorizedHandler()
       throw new Error('登录已过期，请重新登录')
     }
     return resp
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络后重试')
+    }
+    throw e
   } finally {
     clearTimeout(timer)
   }
@@ -76,7 +83,8 @@ export async function login(username: string, password: string): Promise<string>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
-  const data = (await resp.json()) as { token?: string } & ErrorBody
+  // L19: parse after checking ok, so a non-JSON error body can't throw.
+  const data = (await resp.json().catch(() => ({}))) as { token?: string } & ErrorBody
   if (!resp.ok) throw new Error(errMessage(resp, data, '登录失败'))
   if (!data.token) throw new Error('登录失败')
   return data.token
@@ -88,7 +96,7 @@ export async function register(username: string, password: string): Promise<stri
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
-  const data = (await resp.json()) as { token?: string } & ErrorBody
+  const data = (await resp.json().catch(() => ({}))) as { token?: string } & ErrorBody
   if (!resp.ok) throw new Error(errMessage(resp, data, '注册失败'))
   if (!data.token) throw new Error('注册失败')
   return data.token
@@ -127,9 +135,15 @@ export async function extractResume(
       body: JSON.stringify({ filename, data_base64: dataBase64 }),
     })
   } catch (e) {
-    throw new Error('上传失败：' + (e instanceof Error ? e.message : '网络错误'))
+    // L21: an expired-session 401 is already surfaced by apiFetch — don't
+    // wrap it into a confusing "上传失败：登录已过期".
+    const msg = e instanceof Error ? e.message : '网络错误'
+    throw new Error(msg === '登录已过期，请重新登录' ? msg : '上传失败：' + msg)
   }
-  const data = (await resp.json()) as { text?: string; truncated?: boolean } & ErrorBody
+  const data = (await resp.json().catch(() => ({}))) as {
+    text?: string
+    truncated?: boolean
+  } & ErrorBody
   if (!resp.ok) throw new Error('解析失败：' + errMessage(resp, data, filename))
   return { text: data.text || '', truncated: !!data.truncated }
 }

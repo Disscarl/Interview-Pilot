@@ -2,7 +2,7 @@
 
 Bakes in the WebSocket size limit (for up-to-5-minute voice answers) so no
 CLI flag is needed:
-    py -3 run_server.py
+    python run_server.py
 """
 import sys
 

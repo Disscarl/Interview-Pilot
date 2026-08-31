@@ -84,13 +84,23 @@ def _has_prior_turn(state: InterviewState) -> bool:
     return any(m.get("role") == "interviewer" for m in state.messages)
 
 
+_OMISSION_MARKER = "\n\n……（中间对话已省略）……\n\n"
+
+
 def _limit_transcript(transcript: str, max_chars: int = _MAX_TRANSCRIPT_CHARS) -> str:
-    """Keep the head (opening context) and tail (recent Q&A) within a char budget."""
+    """Keep the head (opening context) and tail (recent Q&A) within a char budget.
+
+    The omission marker counts against the budget (L23), and a degenerate
+    budget smaller than head+tail falls back to a head-only truncation.
+    """
     if len(transcript) <= max_chars:
         return transcript
+    budget = max_chars - len(_OMISSION_MARKER)
+    if budget <= _MAX_TRANSCRIPT_HEAD:
+        return transcript[:max_chars]
     head = transcript[:_MAX_TRANSCRIPT_HEAD]
-    tail = transcript[-(max_chars - _MAX_TRANSCRIPT_HEAD):]
-    return head + "\n\n……（中间对话已省略）……\n\n" + tail
+    tail = transcript[-(budget - _MAX_TRANSCRIPT_HEAD):]
+    return head + _OMISSION_MARKER + tail
 
 
 class InterviewerAgent:

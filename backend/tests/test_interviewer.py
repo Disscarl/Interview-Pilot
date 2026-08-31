@@ -20,6 +20,19 @@ class LimitTranscriptTest(unittest.TestCase):
         self.assertTrue(r.startswith("字" * 10))  # head kept
         self.assertTrue(r.endswith("字" * 10))    # tail kept
 
+    def test_output_within_budget_including_marker(self):
+        # L23: the omission marker must count against the budget.
+        t = "字" * 20000
+        r = _limit_transcript(t, max_chars=8000)
+        self.assertLessEqual(len(r), 8000)
+
+    def test_tiny_budget_keeps_head_only(self):
+        # L23: degenerate budget (< head) falls back to head-only truncation.
+        t = "字" * 20000
+        r = _limit_transcript(t, max_chars=100)
+        self.assertLessEqual(len(r), 100)
+        self.assertNotIn("省略", r)
+
 
 class ClosingDetectionTest(unittest.TestCase):
     def test_closing_markers_detected(self):

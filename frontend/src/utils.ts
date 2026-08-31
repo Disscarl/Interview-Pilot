@@ -17,8 +17,17 @@ export const PHASE_LABELS: Record<string, string> = {
   evaluate: '评估中',
 }
 
-/** Ordered interview stages shown in the phase progress track. */
-export const PHASE_ORDER = ['intro', 'warm_up', 'tech_1', 'tech_2', 'tech_3', 'closing'] as const
+/** Ordered interview stages shown in the phase progress track (L22: includes
+ * the evaluate terminal stage so the tracker shows 评估中 during evaluation). */
+export const PHASE_ORDER = [
+  'intro',
+  'warm_up',
+  'tech_1',
+  'tech_2',
+  'tech_3',
+  'closing',
+  'evaluate',
+] as const
 
 export function phaseLabel(phase?: string): string {
   return (phase && PHASE_LABELS[phase]) || ''

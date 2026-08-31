@@ -32,8 +32,10 @@
 
 ```bash
 cd backend
+python -m venv .venv                # 建议使用虚拟环境
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # 填入你的 key
+cp .env.example .env                # 填入你的 key
 ```
 
 `.env` 关键项：

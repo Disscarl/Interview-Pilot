@@ -136,7 +136,22 @@ function setJdStatus(text: string, kind: 'error' | 'info'): void {
   jdStatus.value = { text, kind }
 }
 
+const MAX_RESUME_BYTES = 10 * 1024 * 1024 // matches backend /api/resume/extract cap
+
 export async function uploadResume(file: File): Promise<void> {
+  // L20: validate client-side before base64-encoding/uploading the whole file.
+  if (!/\.(pdf|docx|doc)$/i.test(file.name)) {
+    resumeText = null
+    resumeName.value = '仅支持 .pdf / .docx / .doc 格式的简历'
+    resumeState.value = 'error'
+    return
+  }
+  if (file.size > MAX_RESUME_BYTES) {
+    resumeText = null
+    resumeName.value = '文件过大（最多 10MB）'
+    resumeState.value = 'error'
+    return
+  }
   resumeName.value = '读取中：' + file.name
   resumeState.value = ''
   try {
@@ -946,17 +961,28 @@ export async function deleteHistory(id: string): Promise<void> {
 
 /** 重新面试同一岗位：复用历史记录的 JD（旧记录无 JD 时用岗位名回退）。 */
 export async function reInterview(id: string): Promise<void> {
-  const rec = await api.getHistory(id)
-  currentJd =
-    rec.jd ??
-    ({
-      profile: {
-        role_title: rec.role_title,
-        company_name: rec.company_name,
-      },
-    } as JdAnalysis)
-  plan.value = currentJd
-  startInterview()
+  // L17: surface failures instead of an unhandled rejection, and ignore
+  // double-clicks while a re-interview is already loading.
+  if (historyLoading.value) return
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const rec = await api.getHistory(id)
+    currentJd =
+      rec.jd ??
+      ({
+        profile: {
+          role_title: rec.role_title,
+          company_name: rec.company_name,
+        },
+      } as JdAnalysis)
+    plan.value = currentJd
+    startInterview()
+  } catch (e) {
+    historyError.value = e instanceof Error ? e.message : '加载失败'
+  } finally {
+    historyLoading.value = false
+  }
 }
 
 // ── Coach（教练复盘） ──────────────────────────────────────
