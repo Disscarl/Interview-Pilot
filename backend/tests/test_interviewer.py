@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 
+from langchain_core.messages import HumanMessage
+
 from agent.interviewer import _limit_transcript, _looks_like_closing, InterviewerAgent
 from models.interview import InterviewPhase, InterviewState
 
@@ -88,6 +90,41 @@ class ScoringTest(IsolatedAsyncioTestCase):
         agent = InterviewerAgent(FakeLLM())
         state = InterviewState(session_id="s", scenario_id="g")
         self.assertIsNone(await agent._score_last_answer(state))
+
+    async def test_score_tolerates_non_integer(self):
+        # L6: a "3.5"-style score must not crash the scoring turn.
+        agent = InterviewerAgent(FakeLLM(score_response='{"score": "3.5", "weakness_hint": "x"}'))
+        info = await agent._score_last_answer(self._state())
+        self.assertEqual(info["score"], 3)
+
+    def test_system_prompt_has_injection_boundary(self):
+        # L5: prompts declare that user-supplied data is untrusted input.
+        agent = InterviewerAgent(FakeLLM())
+        sp = agent._build_system_prompt(self._state())
+        self.assertIn("不可信的外部输入", sp)
+
+    def test_scorer_prompt_delimiters_answer(self):
+        # L5: the candidate answer is wrapped in an explicit delimiter.
+        from agent.prompts import ANSWER_SCORER_PROMPT
+        messages = ANSWER_SCORER_PROMPT.format_messages(role="测试岗", answer="我的回答")
+        human = messages[-1].content
+        self.assertIn("<CANDIDATE_ANSWER>", human)
+        self.assertIn("</CANDIDATE_ANSWER>", human)
+
+    def test_build_history_no_duplicate_latest_answer(self):
+        # L7: the latest candidate answer is excluded from the recent-history
+        # window here (the caller appends it once as the current-prompt input),
+        # so it must not appear twice.
+        agent = InterviewerAgent(FakeLLM())
+        state = InterviewState(session_id="s1", scenario_id="generic", role_title="测试岗")
+        state.add_message("interviewer", "你好")
+        state.add_message("candidate", "我有五年经验")
+        state.add_message("interviewer", "具体讲讲")
+        state.add_message("candidate", "做过电商系统")
+        history = agent._build_history(state)
+        human_contents = [m.content for m in history if isinstance(m, HumanMessage)]
+        self.assertNotIn("做过电商系统", human_contents)
+        self.assertIn("我有五年经验", human_contents)
 
     def test_system_prompt_includes_score_guidance(self):
         agent = InterviewerAgent(FakeLLM())

@@ -273,9 +273,15 @@ async def extract_resume_endpoint(req: ResumeUpload, user: dict = Depends(get_cu
     if len(data) > _MAX_RESUME_BYTES:
         raise HTTPException(status_code=422, detail="文件过大（最多 10MB）")
     try:
-        text = await asyncio.to_thread(extract_text, req.filename, data)
+        # L9: bound extraction time (huge/malformed files) and let corrupt
+        # files surface as 422 via ValueError instead of an internal 500.
+        text = await asyncio.wait_for(
+            asyncio.to_thread(extract_text, req.filename, data), timeout=30
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=422, detail="简历解析超时，请更换文件后重试")
     # Cap the extracted text at the same limit /api/jd/analyze enforces, so a
     # long resume can never dead-end in a 422 the user cannot fix (R3).
     truncated = False
@@ -374,7 +380,12 @@ async def generate_coach(interview_id: str, user: dict = Depends(get_current_use
         for m in rec.get("messages") or []
     )
     transcript = _limit_transcript(transcript)
-    coach_report = await coach.generate(transcript, rec.get("report") or {})
+    try:
+        coach_report = await coach.generate(transcript, rec.get("report") or {})
+    except Exception as e:
+        # L4: a coach LLM failure must not surface as a raw 500.
+        logger.error("Coach generation failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail="教练复盘生成失败，请稍后重试")
     await save_coach(interview_id, user["id"], coach_report)
     return {"coach": coach_report}
 

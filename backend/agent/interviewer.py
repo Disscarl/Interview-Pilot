@@ -274,12 +274,21 @@ class InterviewerAgent:
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             data = json.loads(content)
-            score = int(data.get("score", 3))
-            score = max(1, min(5, score))
-            return {
-                "score": score,
-                "weakness_hint": str(data.get("weakness_hint", ""))[:50],
-            }
+            try:
+                # L8: run the fallback through the same schema boundary as the
+                # structured path so out-of-range fields are cleaned, not trusted.
+                validated = AnswerScore(**data)
+                score, hint = validated.score, validated.weakness_hint
+            except Exception:
+                # L6: malformed values (e.g. "3.5") must not crash the whole
+                # scoring turn — clamp instead of dropping the score.
+                try:
+                    score = int(float(data.get("score", 3)))
+                except (TypeError, ValueError):
+                    score = 3
+                score = max(1, min(5, score))
+                hint = str(data.get("weakness_hint", ""))[:50]
+            return {"score": score, "weakness_hint": hint}
         except Exception as e:
             logger.warning("Answer scoring failed: %s", e)
             return None
@@ -289,6 +298,10 @@ class InterviewerAgent:
         messages = [SystemMessage(content=self._build_system_prompt(state, score_info))]
         # Only include the last 10 messages to keep context manageable
         recent = state.messages[-10:] if len(state.messages) > 10 else state.messages
+        if recent and recent[-1]["role"] == "candidate":
+            # The latest answer is appended separately as the current-prompt
+            # input (stream_next), so it must not be duplicated here (L7).
+            recent = recent[:-1]
         for msg in recent:
             if msg["role"] == "interviewer":
                 messages.append(AIMessage(content=msg["content"]))
@@ -436,7 +449,9 @@ class EvaluatorAgent:
         )
         content = str(getattr(response, "content", None) or "")
 
-        # Fallback: parse JSON from the response (with markdown-code-fence handling).
+        # Fallback: parse JSON from the response (with markdown-code-fence
+        # handling), then run it through the same schema as the structured
+        # path so out-of-range fields are rejected, not trusted (L8).
         try:
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
@@ -444,10 +459,12 @@ class EvaluatorAgent:
                 content = content.split("```")[1].split("```")[0].strip()
             data = json.loads(content)
             if isinstance(data, dict):
-                return data
+                return EvaluationReport(**data).to_dict()
             logger.warning("Evaluation JSON was not an object: %s", type(data).__name__)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError, TypeError):
             pass
+        except Exception as e:
+            logger.warning("Evaluation fallback failed schema validation: %s", e)
         return {
             "overall_score": 0,
             "dimension_scores": {},

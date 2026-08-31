@@ -94,7 +94,9 @@ async def judge_followup_relevance(llm, prev_q: str, answer: str, next_q: str) -
             data = json.loads(content.strip())
             return {"relevance": int(data.get("relevance", 3)), "reason": str(data.get("reason", ""))}
         except Exception:
-            return {"relevance": 0, "reason": "judge 解析失败"}
+            # L3: a failed judge must not score 0 and drag the average down;
+            # the caller filters these out and tracks the failure ratio.
+            return None
 
 
 async def measure_score_stability(llm, answer: str, n: int = 3) -> dict:
@@ -109,8 +111,11 @@ async def measure_score_stability(llm, answer: str, n: int = 3) -> dict:
     valid = [s for s in scores if s is not None]
     return {
         "scores": scores,
-        "max_delta": (max(valid) - min(valid)) if len(valid) >= 2 else 0,
+        # None when there is no valid sample — a fully-failed scorer must not
+        # report a stable 0-delta and pass the eval (L2).
+        "max_delta": (max(valid) - min(valid)) if len(valid) >= 2 else None,
         "std": round(statistics.pstdev(valid), 2) if len(valid) >= 2 else 0.0,
+        "valid_count": len(valid),
     }
 
 
@@ -139,11 +144,17 @@ async def run_eval(llm=None) -> dict:
     """Run all checks; returns an aggregate metrics dict."""
     llm = llm or get_default_llm()
 
-    # 1) follow-up relevance over samples
+    # 1) follow-up relevance over samples (failed judges are filtered out and
+    # counted — L3)
     relevance = []
+    judge_failures = 0
     for s in SAMPLES:
         r = await judge_followup_relevance(llm, s["prev_q"], s["answer"], s["next_q"])
-        relevance.append(r["relevance"])
+        if r is None:
+            judge_failures += 1
+        else:
+            relevance.append(r["relevance"])
+    judge_failed = judge_failures > len(SAMPLES) / 3
 
     # 2) score stability on one representative answer
     stability = await measure_score_stability(
@@ -162,6 +173,8 @@ async def run_eval(llm=None) -> dict:
         "followup_relevance": {
             "avg": round(sum(relevance) / len(relevance), 2) if relevance else 0,
             "scores": relevance,
+            "failed": judge_failures,
+            "judge_failed": judge_failed,
         },
         "score_stability": stability,
         "report_completeness": completeness,
@@ -172,10 +185,14 @@ async def run_eval(llm=None) -> dict:
 def main() -> None:
     metrics = asyncio.run(run_eval())
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
+    max_delta = metrics["score_stability"]["max_delta"]
     ok = (
         metrics["report_completeness"]["ok"]
         and metrics["followup_relevance"]["avg"] >= 3
-        and metrics["score_stability"]["max_delta"] <= 1
+        and not metrics["followup_relevance"]["judge_failed"]
+        # None → the scorer produced no valid samples → must not pass (L2).
+        and max_delta is not None
+        and max_delta <= 1
     )
     print("\n== eval 结论:", "PASS ✅" if ok else "NEEDS ATTENTION ⚠️")
 

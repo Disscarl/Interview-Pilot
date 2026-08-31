@@ -1,7 +1,9 @@
 import struct
 import unittest
 
-from services.asr import _pcm_from_wav, SEGMENT_BYTES, SEGMENT_SECONDS, BYTES_PER_SECOND
+from services.asr import (
+    _pcm_from_wav, _frame_status, SEGMENT_BYTES, SEGMENT_SECONDS, BYTES_PER_SECOND,
+)
 
 
 def _make_wav(pcm: bytes) -> bytes:
@@ -42,6 +44,18 @@ class SegmentConfigTest(unittest.TestCase):
         self.assertEqual(SEGMENT_SECONDS, 55)
         self.assertEqual(SEGMENT_BYTES, SEGMENT_SECONDS * BYTES_PER_SECOND)
         self.assertLess(SEGMENT_SECONDS, 60)
+
+
+class FrameStatusTest(unittest.TestCase):
+    """L1: a single-frame upload must still send the end marker (status=2)."""
+
+    def test_single_frame_is_last(self):
+        self.assertEqual(_frame_status(0, 1), 2)
+
+    def test_multi_frame_sequence(self):
+        self.assertEqual(_frame_status(0, 3), 0)
+        self.assertEqual(_frame_status(1, 3), 1)
+        self.assertEqual(_frame_status(2, 3), 2)
 
 
 if __name__ == "__main__":

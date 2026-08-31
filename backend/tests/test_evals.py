@@ -120,6 +120,42 @@ class StructuredOutputTest(IsolatedAsyncioTestCase):
         self.assertEqual(len(res["scores"]), 3)
         self.assertEqual(res["max_delta"], 0)
 
+    async def test_score_stability_all_failed_is_none(self):
+        """L2: a fully-failed scorer must not report a passable 0-delta."""
+
+        class FailingScorerLLM:
+            async def ainvoke(self, messages):
+                raise RuntimeError("boom")
+
+        res = await measure_score_stability(FailingScorerLLM(), "答案", n=3)
+        self.assertEqual(res["valid_count"], 0)
+        self.assertIsNone(res["max_delta"])
+
+    async def test_judge_parse_failure_returns_none(self):
+        """L3: a judge that cannot be parsed returns None, not a 0 score."""
+
+        class GarbageLLM:
+            async def ainvoke(self, messages):
+                return SimpleNamespace(content="not json at all")
+
+        r = await judge_followup_relevance(GarbageLLM(), "q1", "a1", "q2")
+        self.assertIsNone(r)
+
+    async def test_evaluator_fallback_validates_schema(self):
+        """L8: fallback output runs through EvaluationReport — an out-of-range
+        overall_score must be rejected into the placeholder, not trusted."""
+
+        class OutOfRangeLLM:
+            async def ainvoke(self, messages):
+                bad = dict(VALID_REPORT)
+                bad["overall_score"] = 9
+                return SimpleNamespace(content=json.dumps(bad, ensure_ascii=False))
+
+        agent = EvaluatorAgent(llm=OutOfRangeLLM())
+        report = await agent.evaluate(self._state())
+        self.assertEqual(report["overall_score"], 0)
+        self.assertIn("评估解析失败", report["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

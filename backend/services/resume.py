@@ -19,8 +19,12 @@ def extract_pdf(data: bytes) -> str:
 
 def extract_docx(data: bytes) -> str:
     """Extract text from a .docx file (a ZIP containing word/document.xml)."""
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        xml = z.read("word/document.xml").decode("utf-8", "ignore")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            xml = z.read("word/document.xml").decode("utf-8", "ignore")
+    except (zipfile.BadZipFile, KeyError) as e:
+        # L9: a corrupt file must surface as a friendly 422, not a 500.
+        raise ValueError("无效的 .docx 文件（文件损坏或格式错误）") from e
     # paragraph breaks, tabs, then strip all remaining tags
     xml = re.sub(r"</w:p>", "\n", xml)
     xml = re.sub(r"<w:tab[^>]*/>", "\t", xml)

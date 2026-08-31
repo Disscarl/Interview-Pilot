@@ -113,6 +113,21 @@ class ApiTest(TestCase):
         self.assertEqual(r2.json()["text"], "short resume text")
         self.assertFalse(r2.json()["truncated"])
 
+    def test_resume_extract_corrupt_docx_returns_422(self):
+        """L9: a corrupt .docx must surface as a friendly 422, not a 500."""
+        c = self.client
+        token = self._register("resume_bad")
+        auth = {"Authorization": f"Bearer {token}"}
+        r = c.post(
+            "/api/resume/extract",
+            json={
+                "filename": "bad.docx",
+                "data_base64": base64.b64encode(b"this is not a zip").decode(),
+            },
+            headers=auth,
+        )
+        self.assertEqual(r.status_code, 422)
+
     def test_history_progress_endpoint(self):
         c = self.client
         self.assertEqual(c.get("/api/history/progress").status_code, 401)
@@ -180,6 +195,36 @@ class ApiTest(TestCase):
                 headers={"Authorization": f"Bearer {token_b}"},
             )
         self.assertEqual(rb.status_code, 404)
+
+    def test_coach_endpoint_llm_failure_returns_502(self):
+        """L4: a coach LLM failure must not surface as a raw 500."""
+        import asyncio
+
+        from services.auth import decode_token
+        from services.history import save_interview
+
+        class BoomCoach:
+            async def generate(self, transcript, report):
+                raise RuntimeError("llm boom")
+
+        c = self.client
+        token = self._register("coach_boom")
+        auth = {"Authorization": f"Bearer {token}"}
+        user_id = decode_token(token)
+
+        async def seed():
+            await save_interview(
+                "sess_coach_boom", "岗位", "公司",
+                [{"role": "interviewer", "content": "你好", "phase": "intro"}],
+                {"overall_score": 3.0},
+                user_id,
+            )
+
+        asyncio.run(seed())
+
+        with patch.object(main, "coach", BoomCoach()):
+            r = c.post("/api/history/sess_coach_boom/coach", headers=auth)
+        self.assertEqual(r.status_code, 502)
 
 
 if __name__ == "__main__":

@@ -58,6 +58,15 @@ def _build_auth_url() -> str:
     return WSS_URL + "?" + query
 
 
+def _frame_status(idx: int, total: int) -> int:
+    """iFlytek frame status: 0=first, 1=middle, 2=last.
+
+    The last frame must be status=2 even for a single-frame upload; a
+    one-frame clip that only ever sends status=0 never signals the end.
+    """
+    return 2 if idx == total - 1 else (0 if idx == 0 else 1)
+
+
 async def _transcribe_segment(pcm: bytes) -> str:
     """Transcribe one PCM segment (<=55s). Returns text ('' on failure)."""
     if not pcm:
@@ -89,8 +98,7 @@ async def _transcribe_segment(pcm: bytes) -> str:
             _build_auth_url(), max_size=1024 * 1024, open_timeout=30
         ) as ws:
             for idx, frame in enumerate(frames):
-                status = 0 if idx == 0 else (2 if idx == total - 1 else 1)
-                await ws.send(make_frame(status, frame))
+                await ws.send(make_frame(_frame_status(idx, total), frame))
                 await asyncio.sleep(0.01)
 
             async for message in ws:
@@ -108,8 +116,10 @@ async def _transcribe_segment(pcm: bytes) -> str:
                 for item in result.get("ws") or []:
                     for c in item.get("cw") or []:
                         w = c.get("w")
-                        if w:
-                            words_by_sn.setdefault(sn, []).append(w)
+                        # Dedupe: the same sn may arrive in incremental chunks
+                        # (pgs/rg) or be re-sent; a plain append would duplicate.
+                        if w and w not in words_by_sn.setdefault(sn, []):
+                            words_by_sn[sn].append(w)
                 if data.get("status") == 2 and result.get("ls"):
                     break
         return "".join("".join(words_by_sn[k]) for k in sorted(words_by_sn))
