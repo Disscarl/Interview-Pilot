@@ -1,6 +1,7 @@
 import hashlib
 import json
 import unittest
+from unittest.mock import patch
 
 from services.auth import (
     hash_password, verify_password, create_token, decode_token, _b64url_decode,
@@ -64,6 +65,12 @@ class TokenTest(unittest.TestCase):
         self.assertIn("iat", payload)
         self.assertIn("jti", payload)
         self.assertGreater(payload["exp"], payload["iat"])
+
+    def test_expired_token_rejected(self):
+        # T-7: a token past its exp must decode to None.
+        token = create_token(42)
+        with patch("services.auth.time.time", return_value=2**32):
+            self.assertIsNone(decode_token(token))
 
 
 if __name__ == "__main__":

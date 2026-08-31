@@ -697,10 +697,14 @@ export function endInterview(): void {
   if (!connected.value || !ws) return
   if (recording.value) cancelRecording()
   stopTtsAudio()
-  closedByUser = true
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: 'end' }))
+  if (ws.readyState !== WebSocket.OPEN) {
+    // M2: the socket died before its close event fired — don't pretend the
+    // interview ended (the server would never evaluate or save history).
+    showInputHint('连接已断开，无法结束面试，请稍后重试', true)
+    return
   }
+  closedByUser = true
+  ws.send(JSON.stringify({ action: 'end' }))
   setUIState('done')
 }
 

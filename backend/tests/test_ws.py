@@ -145,6 +145,22 @@ class WsTest(TestCase):
             got = _drain(ws, {"stream_end"})
             self.assertEqual(got[-1]["type"], "stream_end")
 
+    def test_first_message_bad_json_and_non_create(self):
+        """T-12: the first message must be valid JSON with action=create."""
+        token = self._register("first_bad")
+
+        with self.client.websocket_connect(f"/ws/sess_first_1?token={token}") as ws:
+            ws.send_text("not json at all")
+            m = ws.receive_json()
+            self.assertEqual(m["type"], "error")
+            self.assertIn("格式", m["content"])
+
+        with self.client.websocket_connect(f"/ws/sess_first_2?token={token}") as ws:
+            ws.send_json({"action": "answer", "content": "x"})
+            m = ws.receive_json()
+            self.assertEqual(m["type"], "error")
+            self.assertIn("create", m["content"])
+
     def test_traversal_session_id_rejected(self):
         """R1: WS session_id must be whitelisted before any filesystem use.
 

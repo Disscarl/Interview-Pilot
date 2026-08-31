@@ -7,7 +7,7 @@ import base64
 import os
 import tempfile
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 # Must be set before `main`/`config` are imported so a bare clone without
 # backend/.env can still construct the (offline) LLM stubs.
@@ -135,6 +135,139 @@ class ApiTest(TestCase):
         r = c.get("/api/history/progress", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["groups"], [])
+
+    def test_audio_endpoint_auth_paths(self):
+        """T-1: /api/audio must authenticate (query + Bearer), enforce ownership,
+        reject bad paths, and 404 for missing files."""
+        import asyncio
+
+        from services.auth import decode_token
+        from services.history import save_interview
+
+        c = self.client
+        token_a = self._register("audio_a")
+        token_b = self._register("audio_b")
+        user_a = decode_token(token_a)
+
+        async def seed():
+            await save_interview(
+                "sess_audio_1", "岗位", "公司",
+                [{"role": "interviewer", "content": "你好"}],
+                {"overall_score": 3.0}, user_a,
+            )
+
+        asyncio.run(seed())
+        audio_dir = os.path.join(main.settings.audio_dir, "sess_audio_1")
+        os.makedirs(audio_dir, exist_ok=True)
+        with open(os.path.join(audio_dir, "msg1.wav"), "wb") as f:
+            f.write(b"RIFF-fake-wav")
+
+        # unauthenticated → 401
+        self.assertEqual(c.get("/api/audio/sess_audio_1/msg1").status_code, 401)
+        # query token → 200
+        self.assertEqual(
+            c.get(f"/api/audio/sess_audio_1/msg1?token={token_a}").status_code, 200
+        )
+        # Bearer header → 200
+        self.assertEqual(
+            c.get(
+                "/api/audio/sess_audio_1/msg1",
+                headers={"Authorization": f"Bearer {token_a}"},
+            ).status_code,
+            200,
+        )
+        # other user → 404 (ownership)
+        self.assertEqual(
+            c.get(f"/api/audio/sess_audio_1/msg1?token={token_b}").status_code, 404
+        )
+        # traversal path → 400
+        self.assertEqual(
+            c.get(f"/api/audio/..%5Cbad/msg1?token={token_a}").status_code, 400
+        )
+        # missing file → 404
+        self.assertEqual(
+            c.get(f"/api/audio/sess_audio_1/nope?token={token_a}").status_code, 404
+        )
+
+    def test_tts_preview_branches(self):
+        """T-9: too-long text → 422, synthesis failure → 502, success → 200+b64."""
+        c = self.client
+        token = self._register("tts_branches")
+        auth = {"Authorization": f"Bearer {token}"}
+
+        r = c.post(
+            "/api/tts/preview",
+            json={"text": "字" * 501, "voice": "x5_lingxiaotang_flow", "speed": 50},
+            headers=auth,
+        )
+        self.assertEqual(r.status_code, 422)
+
+        with patch.object(main, "synthesize_cached", new=AsyncMock(return_value=None)):
+            r2 = c.post(
+                "/api/tts/preview",
+                json={"text": "你好", "voice": "x5_lingxiaotang_flow", "speed": 50},
+                headers=auth,
+            )
+        self.assertEqual(r2.status_code, 502)
+
+        with patch.object(main, "synthesize_cached", new=AsyncMock(return_value=b"mp3")):
+            r3 = c.post(
+                "/api/tts/preview",
+                json={"text": "你好", "voice": "x5_lingxiaotang_flow", "speed": 50},
+                headers=auth,
+            )
+        self.assertEqual(r3.status_code, 200)
+        self.assertEqual(r3.json()["audio_base64"], base64.b64encode(b"mp3").decode())
+
+    def test_jd_analyze_branches(self):
+        """T-4: validation 422s, success, candidate-failure fallback, LLM 500."""
+        c = self.client
+        token = self._register("jd_branches")
+        auth = {"Authorization": f"Bearer {token}"}
+        base = {"text": "UE开发工程师 JD", "company": "", "resume_text": "我有三年经验"}
+
+        # empty JD → 422
+        self.assertEqual(
+            c.post("/api/jd/analyze", json={**base, "text": "  "}, headers=auth).status_code,
+            422,
+        )
+        # missing resume → 422
+        self.assertEqual(
+            c.post("/api/jd/analyze", json={**base, "resume_text": ""}, headers=auth).status_code,
+            422,
+        )
+        # JD too long → 422
+        self.assertEqual(
+            c.post(
+                "/api/jd/analyze", json={**base, "text": "字" * 20001}, headers=auth
+            ).status_code,
+            422,
+        )
+        # company intro too long → 422
+        self.assertEqual(
+            c.post(
+                "/api/jd/analyze", json={**base, "company": "字" * 2001}, headers=auth
+            ).status_code,
+            422,
+        )
+
+        # success path
+        with patch.object(main, "analyze_candidate", new=AsyncMock(return_value={"skills": ["C++"]})), \
+             patch.object(main, "analyze_jd", new=AsyncMock(return_value={"profile": {}, "plan": {}})):
+            r = c.post("/api/jd/analyze", json=base, headers=auth)
+        self.assertEqual(r.status_code, 200)
+
+        # candidate extraction failure → falls back, still 200
+        with patch.object(main, "analyze_candidate", new=AsyncMock(side_effect=RuntimeError("boom"))), \
+             patch.object(main, "analyze_jd", new=AsyncMock(return_value={"profile": {}, "plan": {}})):
+            r2 = c.post("/api/jd/analyze", json=base, headers=auth)
+        self.assertEqual(r2.status_code, 200)
+
+        # LLM failure → 500 (local keeps the detail for debugging, L33)
+        with patch.object(main, "analyze_candidate", new=AsyncMock(return_value=None)), \
+             patch.object(main, "analyze_jd", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            r3 = c.post("/api/jd/analyze", json=base, headers=auth)
+        self.assertEqual(r3.status_code, 500)
 
     def test_coach_endpoint_generate_and_cache(self):
         import asyncio

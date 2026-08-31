@@ -11,6 +11,7 @@ import urllib.parse
 
 import httpx
 
+from config import logger
 from agent.prompts import JD_PROFILE_PROMPT, JD_PLAN_PROMPT, COMPANY_RESEARCH_PROMPT, CANDIDATE_PROFILE_PROMPT
 
 _BROWSER_HEADERS = {
@@ -75,12 +76,17 @@ async def _search_baidu(query: str, timeout: float = 15.0) -> list:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
             resp = await client.get(url, headers=_BROWSER_HEADERS)
-    except Exception:
+    except Exception as e:
+        # M5: log the failure so a Baidu outage/layout change is visible in
+        # logs instead of silently degrading company research.
+        logger.warning("Baidu search request failed: %s", e)
         return []
     if resp.status_code != 200:
+        logger.warning("Baidu search returned status %s", resp.status_code)
         return []
     # Baidu's anti-bot interstitial (百度安全验证)
     if "百度安全验证" in resp.text or "wappass.baidu.com" in resp.text:
+        logger.info("Baidu anti-bot interstitial — company research skipped")
         return []
 
     html = resp.text
@@ -102,6 +108,9 @@ async def _search_baidu(query: str, timeout: float = 15.0) -> list:
         results.append({"title": title, "snippet": snippet, "url": href})
         if len(results) >= 8:
             break
+    if not results:
+        # M5: zero parsed results usually means Baidu changed its layout.
+        logger.info("Baidu search parsed no results for query: %s", query[:60])
     return results
 
 
